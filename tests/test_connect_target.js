@@ -1,0 +1,10 @@
+const source=readFile('src/hk_quote/web/app.js');
+const esc=x=>String(x??'').replace(/</g,'&lt;'),when=t=>'香港时间 '+t;
+eval(source.slice(source.indexOf('function connectTarget('),source.indexOf('function stocks(')));
+const livePrices={};
+const s={connect_target:{target_price:23.46,source_date:'2026-11-18',fetched_at:100,cycle:'2026-12-31期',in_market_value:'93.33亿'}};
+let html=connectTarget(s)+connectTargetInfo(s)+quoteSourceInfo(s);
+for(const text of ['目标入通价','23.46','93.33亿','2026-11-18','香港时间 100','每60秒更新'])if(!html.includes(text))throw Error('Missing '+text);
+s.connect_target.stale=true;if(!connectTarget(s).includes('缓存'))throw Error('stale target hidden');
+if(!connectTarget({}).includes('暂未提供'))throw Error('missing target invented');
+print('Connect target rendering passed');

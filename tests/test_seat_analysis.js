@@ -1,0 +1,12 @@
+const source=readFile('src/hk_quote/web/report.js'),nodes={};
+const node=id=>nodes[id]||(nodes[id]={innerHTML:'',value:''});
+const api=new Function('document','BrokerView',source.slice(0,source.indexOf('function renderNet(code){'))+';return {set:value=>data=value,render:renderBrokerPeriods};')({getElementById:node},{replaceContent:(node,html)=>node.innerHTML=html});
+const period=(net,direction,share)=>({net,net_direction:direction,share,bid:10,ask:5,present:12,to_source:'2026-11-19 11:59:41',from_source:null});
+const brokers=[{name:'富途证券',channel_profile:{category:'retail',label:'零售平台渠道',basis:'官方提供个人投资平台',sources:[{title:'官方业务介绍',url:'https://www.futuholdings.com/en-us/profile'}],reviewed_on:'2026-11-20'},total_volume:55000,volume_source:'2026-11-19 15:59:41',ids:['2453','8308'],morning:period(500,'buy',.7),afternoon:period(-300,'sell',.2)},{name:'荷银',ids:['4478','8471'],morning:period(null,'unknown',.8),afternoon:period(null,'unknown',.3)}];
+const value={brokers,periods:{morning:{valid:900},afternoon:{valid:1080}},summary:{morning:{buy:[{name:'富途证券',net:500}],sell:[]},afternoon:{buy:[],sell:[{name:'富途证券',net:-300}]}},morning_source:'11:59',noon_source:'11:59',afternoon_source:'15:59'};
+api.set({insights:{broker_periods:{'HK.02206':value}}});api.render('HK.02206');
+const html=node('seat-analysis').innerHTML;
+for(const text of ['上午 · 净买入券商','上午 · 净卖出券商','下午 · 净买入券商','下午 · 净卖出券商','上午净买入 → 下午净卖出','零售平台渠道','分类依据','官方业务介绍','不是实际客户身份','5.5 万股','当日总成交量 ↓','2453 / 8308','4478 / 8471','净买卖未知','挂盘：偏买侧','总成交量降序排列'])if(!html.includes(text))throw Error('Missing '+text);
+const body=html.split('<tbody>')[1].split('</tbody>')[0];if((body.match(/<tr>/g)||[]).length!==2)throw Error('Brokers split by seat IDs');
+if(body.includes(' open>'))throw Error('Seat audit should be folded');
+print('Morning/afternoon net directions, merged seats, unknown net and folded audits passed');

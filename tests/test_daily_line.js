@@ -1,0 +1,11 @@
+globalThis.window={};globalThis.document={addEventListener(){}};
+let captured;
+globalThis.ChartHover={attributes:(bars)=>{captured=bars;return ''},frame:()=>''};
+if(typeof load==='function')load('src/hk_quote/web/daily-chart.js');else require('node:vm').runInThisContext(require('node:fs').readFileSync('src/hk_quote/web/daily-chart.js','utf8'));
+const bars=[1,2,3].map((i)=>({time:1794787200+i*86400,open:10,high:15,low:8,close:10+i,volume:i*100,source:'daily'}));
+const html=window.DailyChart.svg('HK.02206',bars);
+if(html.includes('data-daily-close-line')||!html.includes('蜡烛图'))throw Error('没有切换为蜡烛图');
+if((html.match(/<rect /g)||[]).length!==6)throw Error('应有蜡烛实体和成交量柱');
+if((html.match(/<line /g)||[]).length!==6)throw Error('蜡烛高低价线缺失');
+if(html.includes('NaN')||captured[0].open!==10)throw Error('数据或OHLC悬停明细丢失');
+if(typeof print==='function')print('Daily candlesticks, volume and OHLC metadata passed');else console.log('Daily line checks passed');

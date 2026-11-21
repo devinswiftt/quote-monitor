@@ -1,0 +1,152 @@
+{
+  "version": 1,
+  "reviewed_on": "2026-11-20",
+  "scope": "券商业务渠道特征；不是席位最终客户身份，也不是当前交易的机构或散户判定。",
+  "profiles": {
+    "富途证券": {
+      "category": "retail",
+      "basis": "提供面向个人投资者的数字化投资平台，同时也有企业和机构业务；不据此识别席位最终客户。",
+      "sources": [
+        {
+          "title": "官方业务介绍",
+          "url": "https://www.futuholdings.com/en-us/profile"
+        }
+      ]
+    },
+    "老虎证券": {
+      "category": "retail",
+      "basis": "官方介绍面向个人投资者的Tiger Trade平台；仅用于标记零售平台渠道。",
+      "sources": [
+        {
+          "title": "官方业务介绍",
+          "url": "https://www.itiger.com/hk/en/about"
+        }
+      ]
+    },
+    "微牛": {
+      "category": "retail",
+      "basis": "官方介绍强调个人投资者及自主投资平台。",
+      "sources": [
+        {
+          "title": "官方业务介绍",
+          "url": "https://www.webull.hk/en/about"
+        }
+      ]
+    },
+    "长桥": {
+      "category": "retail",
+      "basis": "官方提供面向投资者的线上开户与全球证券投资平台。",
+      "sources": [
+        {
+          "title": "官方业务介绍",
+          "url": "https://longbridge.com/hk/en/about"
+        }
+      ]
+    },
+    "耀才": {
+      "category": "retail",
+      "basis": "官方介绍以网上及电子证券经纪服务开展业务；不代表席位中没有机构客户。",
+      "sources": [
+        {
+          "title": "官方业务介绍",
+          "url": "https://www.bsgroup.com.hk/brightsmart/investor/investor_background.aspx"
+        }
+      ]
+    },
+    "摩根士丹利": {
+      "category": "institutional",
+      "basis": "官方机构证券业务包括股票销售、交易、融资及做市；集团同时有财富管理业务。",
+      "sources": [
+        {
+          "title": "官方业务介绍",
+          "url": "https://www.morganstanley.com/about-us-governance/businesssegments"
+        }
+      ]
+    },
+    "高盛": {
+      "category": "institutional",
+      "basis": "官方股票与FICC业务面向机构及企业客户提供交易、流动性与风险管理服务。",
+      "sources": [
+        {
+          "title": "官方业务介绍",
+          "url": "https://www.goldmansachs.com/what-we-do/ficc-and-equities"
+        }
+      ]
+    },
+    "J.P.摩根": {
+      "category": "institutional",
+      "basis": "官方Markets平台提供机构市场交易服务；部分产品亦面向非机构客户。",
+      "sources": [
+        {
+          "title": "官方业务介绍",
+          "url": "https://emea-markets.jpmorgan.com/home"
+        }
+      ]
+    },
+    "花旗环球": {
+      "category": "institutional",
+      "basis": "官方Markets业务面向企业、机构投资者与政府客户。",
+      "sources": [
+        {
+          "title": "官方业务介绍",
+          "url": "https://www.citigroup.com/global/businesses/markets"
+        }
+      ]
+    },
+    "瑞银": {
+      "category": "institutional",
+      "basis": "官方投资银行服务企业、金融机构、机构投资者，亦包括私人及家族办公室客户。",
+      "sources": [
+        {
+          "title": "官方业务介绍",
+          "url": "https://www.ubs.com/global/en/investment-bank/who-we-serve.html"
+        }
+      ]
+    },
+    "凯基": {
+      "category": "mixed",
+      "basis": "官方同时介绍企业、机构及高净值客户服务，并提供个人与公司开户。",
+      "sources": [
+        {
+          "title": "官方业务介绍",
+          "url": "https://www.kgi.com.hk/zh-cn/why-kgis/hong-kong"
+        }
+      ]
+    },
+    "盈透": {
+      "category": "mixed",
+      "basis": "官方同时提供个人投资平台及机构、顾问、基金等客户服务。",
+      "sources": [
+        {
+          "title": "官方业务介绍",
+          "url": "https://www.interactivebrokers.com.hk/en/accounts/institutions.php"
+        }
+      ]
+    },
+    "致富": {
+      "category": "mixed",
+      "basis": "官方明确提供零售和企业客户的投资及财富管理服务。",
+      "sources": [
+        {
+          "title": "官方业务介绍",
+          "url": "https://www.chiefgroup.com.hk/en/about/Index"
+        }
+      ]
+    },
+    "交银国际": {
+      "category": "mixed",
+      "basis": "官方业务披露包括零售、企业及机构客户。",
+      "sources": [
+        {
+          "title": "官方业务介绍",
+          "url": "https://www.bocomgroup.com/BankCommSite/upload/infos/202511/27/7046669/20251127182804_e_03329cir_20251128.pdf"
+        }
+      ]
+    },
+    "荷银": {
+      "category": "unknown",
+      "basis": "这是行情数据源的简称，尚未核实具体参与者主体及清算角色，暂不推定机构或零售属性。",
+      "sources": []
+    }
+  }
+}

@@ -1,0 +1,10 @@
+const source=readFile('src/hk_quote/web/app.js');let captured;
+const chartBars={'US.QQQ':['09:30','11:59','12:00','12:01','16:01'].map(t=>({time:Date.parse('2026-11-20T'+t+':00-05:00')/1000,open:100,close:101,volume:10}))};
+const part=source.slice(source.indexOf('function chartTradingTime('),source.indexOf('\nfunction drawChart'));
+const render=new Function('chartBars','names','esc','when','BehaviorView','ChartHover','behaviorRows',part+';return chartSvg;')(chartBars,{},String,()=>'',{markers:()=>''},{attributes:(bars,x)=>{captured={bars,x};return ''},frame:()=>''},[]);
+const html=render('US.QQQ',true);
+if(!html.includes('美元')||!html.includes('纽约时间轴')||html.includes('港元'))throw Error('US chart currency or zone wrong');
+const points=captured.bars.filter(b=>!b.synthetic);if(points.length!==5)throw Error('US midday or postmarket removed');
+const a=Date.parse('2026-11-20T11:59:00-05:00')/1000,b=a+60;
+if(Math.abs(captured.x(b)-captured.x(a))<.01)throw Error('US lunch compressed');
+print('US chart keeps midday and extended hours with USD/NY labels');

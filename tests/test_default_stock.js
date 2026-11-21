@@ -1,0 +1,14 @@
+const source=typeof readFile==='function'?readFile('src/hk_quote/web/app.js'):require('node:fs').readFileSync('src/hk_quote/web/app.js','utf8');
+const nodes=new Map();
+const doc={addEventListener(){},querySelectorAll:()=>[],getElementById(id){if(!nodes.has(id))nodes.set(id,{value:'',dataset:{},addEventListener(){},set innerHTML(html){this.html=html;if(id==='quote-symbol'){const values=[...html.matchAll(/value="([^"]+)"/g)].map(m=>m[1]);this.value=values[0]||''}},get innerHTML(){return this.html||''}});return nodes.get(id)}};
+const body=source.slice(0,source.lastIndexOf('refresh();setInterval'));
+const api=new Function('document','BrokerView','DailyChart',body+';drawChart=()=>{};return {stocks,setDefault:code=>defaultQuoteSymbol=code};')(doc,{replaceContent:(root,html)=>root.innerHTML=html},{panel:()=>''});
+const select=doc.getElementById('quote-symbol'),button=doc.getElementById('set-default-stock');
+const items=[{code:'HK.02065',name:'一微科技'},{code:'HK.02206',name:'新荷花'}];
+api.setDefault('HK.02206');api.stocks(items);
+if(select.value!=='HK.02206'||!button.disabled)throw Error('Saved default not selected on first load');
+select.value='HK.02065';api.stocks(items);if(select.value!=='HK.02065'||button.disabled)throw Error('Polling overwrote manual choice');
+select.value='';api.stocks(items);if(select.value!=='HK.02206')throw Error('Reload failed to restore default');
+api.stocks([items[0]]);if(select.value!=='HK.02065')throw Error('Removed default did not fall back');
+api.stocks([]);if(select.value!==''||!button.disabled)throw Error('Empty watchlist is not handled');
+if(typeof print==='function')print('Default initial load, manual choice, reload and deletion fallback passed');else console.log('Default stock checks passed');

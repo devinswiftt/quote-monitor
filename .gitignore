@@ -1,0 +1,44 @@
+# Python and local development artifacts
+.venv/
+__pycache__/
+*.egg-info/
+.DS_Store
+.cache/
+.pytest_cache/
+.coverage
+htmlcov/
+build/
+dist/
+
+# Runtime quotes, watchlists, notifications, passwords, and logs
+data/
+logs/
+*.log
+dashboard-password.txt
+dashboard.password
+
+# Local credentials and machine-specific settings
+.env
+.env.*
+!.env.example
+!.env.*.example
+secrets/
+.ssh/
+.aws/
+.codex/
+.netrc
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
+
+# Databases and backups, including copies outside data/
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-*
+backups/
+*.bak

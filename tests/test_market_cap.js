@@ -1,0 +1,10 @@
+const source=typeof readFile==='function'?readFile('src/hk_quote/web/app.js'):require('node:fs').readFileSync('src/hk_quote/web/app.js','utf8');
+const model=new Function(source.slice(source.indexOf('function marketCapitalization('),source.indexOf('function capitalization('))+';return marketCapitalization;')();
+const data={last_price:100,total_market_val:1000000000,circular_market_val:500000000,update_time:'2026-11-18 10:00:00'};
+const time=Date.parse('2026-11-18T10:01:00+08:00')/1000;
+const up=model(data,{price:110,ts:time}),down=model(data,{price:90,ts:time+1});
+if(Math.abs(up.total-1100000000)>.01||up.circulating!==550000000||!up.estimated)throw Error('市值未随上涨更新');
+if(down.total!==900000000||down.circulating!==450000000)throw Error('市值未随下跌更新');
+if(model(data,{price:120,ts:time-120}).estimated)throw Error('使用过期价格覆盖了新快照');
+if(model({...data,total_market_val:null},{price:110,ts:time}).total!==null)throw Error('缺失市值被当作0');
+if(typeof print==='function')print('Live capitalization up/down, stale quote and missing-value checks passed');else console.log('Capitalization checks passed');

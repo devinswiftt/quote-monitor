@@ -1,0 +1,66 @@
+{
+  "host": "127.0.0.1",
+  "port": 11111,
+  "symbols": [
+    "HK.02065",
+    "HK.02206",
+    "HK.09621"
+  ],
+  "database": "data/quotes.sqlite3",
+  "window_seconds": 3,
+  "baseline_seconds": 300,
+  "warmup_seconds": 60,
+  "direction_ratio": 0.8,
+  "min_direction_coverage": 0.7,
+  "cooldown_seconds": 60,
+  "max_delay_seconds": 10,
+  "desktop_notifications": true,
+  "depth_check_seconds": 15,
+  "names": {
+    "HK.02065": "一微科技",
+    "HK.02206": "新荷花",
+    "HK.09621": "远信储能"
+  },
+  "threshold_mode": "percentile",
+  "profile_seconds": 3600,
+  "profile_quantile": 0.95,
+  "profile_multiplier": 1.1,
+  "profile_min_samples": 20,
+  "behavior": {
+    "enabled": true,
+    "warmup_seconds": 60,
+    "min_profile_samples": 8,
+    "min_trades": 3,
+    "direction_ratio": 0.75,
+    "min_direction_coverage": 0.7,
+    "confirm_seconds": 2,
+    "continuing_seconds": 15,
+    "cooling_seconds": 10,
+    "resolve_seconds": 30
+  },
+  "broker_stats_seconds": 10,
+  "dashboard": {
+    "require_password": false
+  },
+  "rapid_move": {
+    "enabled": true,
+    "profile_seconds": 900,
+    "warmup_seconds": 180,
+    "min_samples": 60,
+    "amount_quantile": 0.95,
+    "amount_multiplier": 1.1,
+    "price_quantile": 0.99,
+    "price_multiplier": 1.25,
+    "min_span_seconds": 1,
+    "min_price_steps": 3,
+    "min_efficiency": 0.8,
+    "max_step_share": 0.6,
+    "min_range_retention": 0.8,
+    "spread_multiple": 2,
+    "windows": [
+      3,
+      15,
+      60
+    ]
+  }
+}

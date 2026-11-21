@@ -1,0 +1,25 @@
+globalThis.window={BrokerView:{detail:()=>'',attribution:()=>''}};
+load('src/hk_quote/web/behavior.js');
+const nodes=new Map();const panels=['price','seats','net','evidence','quality'].map(name=>({dataset:{analysisModule:name},open:['price','seats'].includes(name),events:{},addEventListener(k,f){this.events[k]=f}}));
+const document={querySelector:()=>null,querySelectorAll:selector=>selector==='[data-analysis-module]'?panels:[],getElementById(id){if(!nodes.has(id))nodes.set(id,{value:'',dataset:{},events:{},addEventListener(name,fn){this.events[name]=fn}});return nodes.get(id)}};
+const memory=new Map([['hk_quote.analysis.price','0'],['hk_quote.analysis.net','1']]);
+const storage={getItem:key=>memory.get(key)??null,setItem:(key,value)=>memory.set(key,value)};
+const source=readFile('src/hk_quote/web/report.js');
+const api=new Function('document','BehaviorView','BrokerView','localStorage',source.slice(0,source.indexOf("$('analysis-date').value=new URLSearchParams"))+`;return {set:value=>data=value,render,initializeModules};`)(document,window.BehaviorView,{replaceContent:(node,html)=>node.innerHTML=html,renderSummary:()=>''},storage);
+const node=id=>document.getElementById(id);
+const base={code:'HK.02206',started_at:1795068227,updated_at:1795068314,phase:'resolved',evidence:{},signals:[],alert_ids:[]};
+api.set({names:{'HK.02206':'新荷花','HK.02065':'一微科技'},rows:[],summary:[],behaviors:[{...base,id:1,type:'DUMP',history:[{type:'DUMP',phase:'confirmed',ts:base.started_at}]},{...base,id:2,type:'LIFT',history:[]},{...base,id:3,code:'HK.02065',type:'DUMP',history:[]}]});
+node('report-symbol').value='HK.02206';api.initializeModules();api.render();
+function count(expected){const html=node('report-behaviors').innerHTML;if(!html.includes(`共 ${expected} 条`))throw Error('Summary/filter mismatch');if(html.includes('data-behavior-id='))throw Error('Analysis duplicated full event list');return html}
+count(2);
+const click=kind=>node('report-content').events.click({target:{closest:selector=>selector==='[data-behavior-filter]'?{dataset:{behaviorFilter:kind}}:null}});
+click('DUMP');if(node('report-behavior-type').value!=='DUMP'||!count(1).includes('aria-pressed="true"'))throw Error('Count click did not filter');
+click('DUMP');count(2);
+node('report-behavior-phase').value='confirmed';node('report-behavior-phase').events.change();count(1);
+node('report-symbol').value='HK.02065';node('report-symbol').events.change();count(0);
+node('report-behavior-phase').value='';node('report-behavior-phase').events.change();count(1);
+if(panels[0].open||!panels[2].open)throw Error('Stored module state not restored');
+panels[1].open=false;panels[1].events.toggle();api.render();api.render();
+if(panels[1].open||memory.get('hk_quote.analysis.seats')!=='0')throw Error('Refresh changed collapsed module');
+if(node('selected-evidence').innerHTML.includes('data-id='))throw Error('Evidence should be on demand');
+print('Analysis summaries, filters, no duplicate list, persistent collapses and on-demand evidence passed');
