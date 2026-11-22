@@ -1,8 +1,8 @@
 globalThis.window={BrokerView:{detail:()=>'',attribution:()=>''}};
 load('src/hk_quote/web/behavior.js');
-const nodes=new Map();const panels=['price','seats','net','evidence','quality'].map(name=>({dataset:{analysisModule:name},open:['price','seats'].includes(name),events:{},addEventListener(k,f){this.events[k]=f}}));
+const nodes=new Map();const panels=['price','seats','evidence','quality'].map(name=>({dataset:{analysisModule:name},open:['price','seats'].includes(name),events:{},addEventListener(k,f){this.events[k]=f}}));
 const document={querySelector:()=>null,querySelectorAll:selector=>selector==='[data-analysis-module]'?panels:[],getElementById(id){if(!nodes.has(id))nodes.set(id,{value:'',dataset:{},events:{},addEventListener(name,fn){this.events[name]=fn}});return nodes.get(id)}};
-const memory=new Map([['hk_quote.analysis.price','0'],['hk_quote.analysis.net','1']]);
+const memory=new Map([['hk_quote.analysis.price','0'],['hk_quote.analysis.evidence','1']]);
 const storage={getItem:key=>memory.get(key)??null,setItem:(key,value)=>memory.set(key,value)};
 const source=readFile('src/hk_quote/web/report.js');
 const api=new Function('document','BehaviorView','BrokerView','localStorage',source.slice(0,source.indexOf("$('analysis-date').value=new URLSearchParams"))+`;return {set:value=>data=value,render,initializeModules};`)(document,window.BehaviorView,{replaceContent:(node,html)=>node.innerHTML=html,renderSummary:()=>''},storage);

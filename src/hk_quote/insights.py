@@ -88,27 +88,6 @@ def queue_analysis(events,start,end):
     return output
 
 
-def net_analysis(samples,start):
-    output={}
-    for code,rows in samples.items():
-        names=set().union(*(set(row['brokers']) for row in rows));brokers=[]
-        for name in names:
-            first,last=rows[0],rows[-1];a=first['brokers'].get(name);b=last['brokers'].get(name)
-            changes={}
-            for key,left,right in [('morning',9.5,12),('afternoon',13,16),('tail',15,16)]:
-                begin=start+left*3600;finish=start+right*3600
-                before=next((r for r in reversed(rows) if r['ts']<=begin),None)
-                if before is None and key=='morning':before=next((r for r in rows if begin<=r['ts']<=begin+300),None)
-                after=next((r for r in reversed(rows) if begin<=r['ts']<=finish),None)
-                usable=before is not None and after is not None and before['ts']<after['ts'] and (key=='morning' or begin-before['ts']<=300)
-                x=before['brokers'].get(name) if usable else None;y=after['brokers'].get(name) if usable else None
-                changes[key]=dict(delta=y-x if x is not None and y is not None else None,from_source=before['source'] if before else None,to_source=after['source'] if after else None)
-            brokers.append(dict(name=name,first=a,last=b,delta=b-a if a is not None and b is not None else None,periods=changes,status='both' if a is not None and b is not None else 'newly_listed' if a is None else 'not_listed'))
-        brokers.sort(key=lambda row:(row['delta'] is None,-abs(row['delta'] or 0),row['name']))
-        output[code]=dict(first_source=rows[0]['source'],last_source=rows[-1]['source'],sample_count=len(rows),brokers=brokers)
-    return output
-
-
 def intraday_insights(db,start,end,samples,related=None):
     tables={r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     queue=[];prices=defaultdict(dict)
@@ -120,4 +99,4 @@ def intraday_insights(db,start,end,samples,related=None):
             bar=prices[code].setdefault(int(ts//60)*60,dict(ts=int(ts//60)*60,price=price,volume=0))
             bar['price']=price;bar['volume']+=volume or 0
     price_rows={code:list(bars.values()) for code,bars in prices.items()}
-    return dict(queues=queue_analysis(queue,start,end),nets=net_analysis(samples,start),prices=price_rows,broker_periods=broker_periods(queue,start,end,samples,volumes=volume_snapshots(db,samples)))
+    return dict(queues=queue_analysis(queue,start,end),prices=price_rows,broker_periods=broker_periods(queue,start,end,samples,volumes=volume_snapshots(db,samples)))

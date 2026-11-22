@@ -1,7 +1,7 @@
 from datetime import datetime
 import unittest
 from hk_quote.engine import HK
-from hk_quote.insights import queue_analysis,net_analysis,describe_seat
+from hk_quote.insights import queue_analysis,describe_seat
 
 class InsightTests(unittest.TestCase):
  def setUp(self):self.start=datetime(2026,11,19,tzinfo=HK).timestamp()
@@ -26,23 +26,6 @@ class InsightTests(unittest.TestCase):
   seat=result['seats'][0]
   self.assertIsNone(seat['afternoon']['share']);self.assertIsNone(seat['shift'])
   self.assertEqual(seat['category'],'other')
- def sample(self,clock,brokers):
-  hour,minute=map(int,clock.split(':'));ts=self.start+hour*3600+minute*60
-  return dict(ts=ts,source='2026-11-19 '+clock+':00',brokers=brokers)
- def test_net_missing_names_are_unknown_and_periods_use_source_time(self):
-  rows=[self.sample('09:31',{'甲':100,'乙':200}),self.sample('11:59',{'甲':300,'乙':150}),self.sample('13:00',{'甲':300}),self.sample('15:00',{'甲':200,'丙':40}),self.sample('15:59',{'甲':100,'丙':80})]
-  values=net_analysis({'HK.02206':rows},self.start)['HK.02206']
-  by_name={r['name']:r for r in values['brokers']}
-  self.assertEqual(by_name['甲']['periods']['morning']['delta'],200)
-  self.assertEqual(by_name['甲']['periods']['afternoon']['delta'],-200)
-  self.assertEqual(by_name['甲']['periods']['tail']['delta'],-100)
-  self.assertIsNone(by_name['乙']['delta']);self.assertIsNone(by_name['丙']['delta'])
-  self.assertEqual(by_name['丙']['status'],'newly_listed')
- def test_missing_opening_or_lunch_boundary_not_inferred(self):
-  rows=[self.sample('10:30',{'甲':1}),self.sample('11:00',{'甲':3}),self.sample('14:00',{'甲':2})]
-  row=net_analysis({'HK.02206':rows},self.start)['HK.02206']['brokers'][0]
-  self.assertIsNone(row['periods']['morning']['delta']);self.assertIsNone(row['periods']['afternoon']['delta'])
-
  def seat(self,morning,afternoon,tail):
   value={}
   for key,pair in zip(('morning','afternoon','tail'),(morning,afternoon,tail)):

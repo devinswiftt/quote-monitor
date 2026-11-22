@@ -1,5 +1,5 @@
 const $=id=>document.getElementById(id),esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let data=null,seatPage=0,netPage=0,intervalPage=0,selectedEvidence='';
+let data=null,seatPage=0,intervalPage=0,selectedEvidence='';
 const time=t=>new Date(t*1000).toLocaleTimeString('zh-CN',{timeZone:'Asia/Hong_Kong',hour12:false});
 const money=v=>v==null?'—':(v/10000).toFixed(2)+' 万港元';
 const num=v=>v==null?'—':Number(v).toLocaleString('zh-CN',{maximumFractionDigits:3});
@@ -42,11 +42,6 @@ function renderBrokerPeriods(code){
 }
 function renderSeats(code){renderBrokerPeriods(code)}
 
-function renderNet(code){
- const n=data.insights?.nets?.[code];if(!n){BrokerView.replaceContent($('net-analysis'),empty('该日没有可比较的券商净量快照。'));return}
- netPage=Math.min(netPage,Math.max(0,Math.ceil(n.brokers.length/10)-1));
- BrokerView.replaceContent($('net-analysis'),`<p class="hint">源时间 ${esc(n.first_source)} → ${esc(n.last_source)} · ${n.sample_count} 份不同源时间快照。单位：万股。缺少区间端点或券商未上榜显示 —，不按零处理。</p><div class="table-scroll"><table><thead><tr><th>券商</th><th>起点净量</th><th>最新净量</th><th>全区间变化</th><th>上午变化</th><th>下午变化</th><th>15点后变化</th></tr></thead><tbody>${n.brokers.slice(netPage*10,netPage*10+10).map(r=>`<tr><td>${esc(r.name)}${r.status!=='both'?`<small>${r.status==='newly_listed'?'起点未上榜':'终点未上榜'}，无法推断进出</small>`:''}</td><td>${signed(r.first)}</td><td>${signed(r.last)}</td><td>${signed(r.delta)}</td>${['morning','afternoon','tail'].map(key=>`<td title="${esc(r.periods[key].from_source||'起点缺失')} → ${esc(r.periods[key].to_source||'终点缺失')}">${signed(r.periods[key].delta)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>${pager('net',netPage,n.brokers.length)}<p class="hint">正变化表示净买量增加或净卖量减少，不能拆解买卖总量；名单只覆盖数据源公布的券商，无法拆到具体席位。分时起点允许 5 分钟边界偏差，上午可能从首份快照开始；悬停可看实际比较时间。尾盘包含在下午内，不能重复相加。</p>`);
-}
 function evidenceItems(code){return [...(data.behaviors||[]).filter(r=>r.code===code).map(r=>({ref:'B'+r.id,ts:r.started_at,label:BehaviorView.labels[r.type],behavior:r,attribution:r.broker_attribution})),...(data.rows||[]).filter(r=>r.alert.code===code).map(r=>({ref:'#'+r.id,ts:r.alert.ts,label:r.alert.signal_label||labels[r.alert.signal]||r.alert.signal,row:r,attribution:r.broker_attribution}))].sort((a,b)=>b.ts-a.ts)}
 function renderIntervals(items){
  const intervals=new Map();for(const item of items){const a=item.attribution;if(!a?.before_id||!a?.after_id)continue;const key=a.before_id+':'+a.after_id;if(!intervals.has(key))intervals.set(key,{a,items:[]});intervals.get(key).items.push(item)}
@@ -66,17 +61,17 @@ function render(){
  $('report-kpis').innerHTML=[['成交信号',all.length,'原始成交提醒'],['行为观察',allBehaviors.length,`曾确认 ${confirmed} · 仅观察 ${allBehaviors.length-confirmed}`],['已合并券商',data.insights?.broker_periods?.[code]?.brokers?.length||0,'同券商不同席位合并，上午与下午分别对照']].map(([label,n,note])=>`<article class="card"><p class="eyebrow">${label}</p><div class="report-number">${n}<small>${label==='已合并券商'?'家':'条'}</small></div><p class="muted">${note}</p></article>`).join('');
  BrokerView.replaceContent($('report-price'),priceChart(data.insights?.prices?.[code]||[],events));
  BrokerView.replaceContent($('report-behaviors'),BehaviorView.render(data.behaviors||[],data.names,code,$('report-behavior-type').value,$('report-behavior-phase').value,true));
- renderSeats(code);renderNet(code);renderIntervals(evidenceItems(code));
+ renderSeats(code);renderIntervals(evidenceItems(code));
  const ready=all.filter(r=>r.profile?.status==='ready').length;
  BrokerView.replaceContent($('analysis-quality'),`<p>券商异动采样较完整 ${ready} / ${all.length} 条成交信号。缺失时段不推算、不填零。</p><p>席位按保存的完整队列统计；队列位置不自动等同于价格档位。买卖两侧可同时出现，同一侧重复席位每次只记一次。</p><p>挂盘时间为本机接收时间；净买卖按数据源时间对齐。前后快照间隔超过 5 分钟不用于单次异动关联；同一区间多条事件只共同参考。</p><p>行为标签描述价格、成交与盘口表现；在场比例、净量变化均不能认定实际成交归属或庄家身份。收盘后可继续查看保存的数据。</p>`);
 }
 function chooseEvidence(ref){selectedEvidence=ref;renderIntervals(evidenceItems(currentCode()));const panel=$('module-evidence');panel.open=true;saveModule(panel);const record=document.querySelector('#selected-evidence details');if(record)record.open=true;panel.scrollIntoView?.({block:'start',behavior:'smooth'})}
 function saveModule(panel){try{localStorage.setItem('hk_quote.analysis.'+panel.dataset.analysisModule,panel.open?'1':'0')}catch(error){}}
 function initializeModules(){document.querySelectorAll('[data-analysis-module]').forEach(panel=>{try{const saved=localStorage.getItem('hk_quote.analysis.'+panel.dataset.analysisModule);if(saved!==null)panel.open=saved==='1'}catch(error){}panel.addEventListener('toggle',()=>saveModule(panel))})}
-$('report-symbol').addEventListener('change',()=>{seatPage=netPage=intervalPage=0;selectedEvidence='';render()});
+$('report-symbol').addEventListener('change',()=>{seatPage=intervalPage=0;selectedEvidence='';render()});
 ['report-behavior-type','report-behavior-phase'].forEach(id=>$(id).addEventListener('change',render));
 $('evidence-select').addEventListener('change',()=>{if($('evidence-select').value)chooseEvidence($('evidence-select').value);else{selectedEvidence='';renderEvidence([])}});
-$('report-content').addEventListener('click',event=>{const ref=event.target.closest('[data-evidence-ref]');if(ref){chooseEvidence(ref.dataset.evidenceRef);return}const count=event.target.closest('[data-behavior-filter]');if(count){const select=$('report-behavior-type');select.value=select.value===count.dataset.behaviorFilter?'':count.dataset.behaviorFilter;render();return}const page=event.target.closest('[data-analysis-page]');if(page){const value=Math.max(0,Number(page.dataset.page));if(page.dataset.analysisPage==='seat')seatPage=value;if(page.dataset.analysisPage==='net')netPage=value;if(page.dataset.analysisPage==='interval')intervalPage=value;render()}});
+$('report-content').addEventListener('click',event=>{const ref=event.target.closest('[data-evidence-ref]');if(ref){chooseEvidence(ref.dataset.evidenceRef);return}const count=event.target.closest('[data-behavior-filter]');if(count){const select=$('report-behavior-type');select.value=select.value===count.dataset.behaviorFilter?'':count.dataset.behaviorFilter;render();return}const page=event.target.closest('[data-analysis-page]');if(page){const value=Math.max(0,Number(page.dataset.page));if(page.dataset.analysisPage==='seat')seatPage=value;if(page.dataset.analysisPage==='interval')intervalPage=value;render()}});
 $('report-content').addEventListener('keydown',event=>{if(['Enter',' '].includes(event.key)&&event.target.matches('rect[data-evidence-ref]')){event.preventDefault();chooseEvidence(event.target.dataset.evidenceRef)}});
 let loading=false;
 async function refreshAnalysis(){
@@ -96,7 +91,7 @@ async function refreshAnalysis(){
   }
  }catch(error){$('report-error').textContent='更新失败，保留现有数据：'+error.message}finally{loading=false}
 }
-$('analysis-date').addEventListener('change',()=>{seatPage=netPage=intervalPage=0;selectedEvidence='';refreshAnalysis()});
+$('analysis-date').addEventListener('change',()=>{seatPage=intervalPage=0;selectedEvidence='';refreshAnalysis()});
 $('analysis-date').value=new URLSearchParams(location.search).get('date')||'';
 function initializeReportDate(){
  const field=$('analysis-date');
