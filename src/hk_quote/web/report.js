@@ -90,8 +90,195 @@ async function refreshAnalysis(){
   select.innerHTML=Object.entries(data.names).map(([c,n])=>`<option value="${esc(c)}">${esc(n)} ${esc(c)}</option>`).join('');
   if([...select.options].some(o=>o.value===requested))select.value=requested;
   $('report-content').hidden=false;render();
+  if(!select.dataset.ccassReady){
+   select.dataset.ccassReady='1';
+   select.dispatchEvent(new Event('ccass-ready'));
+  }
  }catch(error){$('report-error').textContent='更新失败，保留现有数据：'+error.message}finally{loading=false}
 }
 $('analysis-date').addEventListener('change',()=>{seatPage=netPage=intervalPage=0;selectedEvidence='';refreshAnalysis()});
 $('analysis-date').value=new URLSearchParams(location.search).get('date')||'';
-initializeModules();refreshAnalysis();setInterval(()=>{if(!document.hidden)refreshAnalysis()},3000);
+function initializeReportDate(){
+ const field=$('analysis-date');
+ const dates=TradingDatePicker.bind(field,$('analysis-date-pick'),{zone:()=>'Asia/Hong_Kong',empty:'最新'});
+ $('analysis-date-clear').addEventListener('click',dates.clear);
+}
+initializeReportDate();initializeModules();refreshAnalysis();setInterval(()=>{if(!document.hidden)refreshAnalysis()},3000);
+
+// Display aliases keyed by CCASS participant ID. Keep Futu's original name as a fallback.
+const ccassChineseNames = {
+ A00005:'中国证券登记结算（香港）',
+ B02159:'盈立证券',
+ C00010:'花旗银行',
+ B01664:'路华证券',
+ B01584:'致富证券',
+ B01959:'中泰国际证券',
+ B01955:'富途证券',
+ B01148:'招商证券（香港）',
+ B01900:'东方证券（香港）',
+ C00019:'香港上海汇丰银行',
+};
+function ccassPercent(value){
+ return Number.isFinite(value)?value.toLocaleString('zh-CN',{minimumFractionDigits:1,maximumFractionDigits:1})+'%':'—';
+}
+function initializeIpoTrend(){
+ const panel=$('module-ipo-trend'), button=$('ipo-update'), status=$('ipo-status');
+ const stock=$('report-symbol'), date=$('analysis-date');
+ let version=0;
+ function sourceLink(text, source){
+  return typeof source==='string'&&source.startsWith('https://')
+   ? `<a href="${esc(source)}" target="_blank" rel="noopener">${text}</a>`
+   : esc(source||'来源待补充');
+ }
+
+ const signed=value=>value==null?'—':(value>0?'+':'')+num(value);
+ function render(trend){
+  $('ipo-reference').textContent='';
+  $('ipo-ranking').textContent='';
+  $('ipo-newcomers').textContent='';
+  if(!trend?.days.length){
+   $('ipo-summary').textContent=trend?.message||'所选日期暂无持仓趋势。';
+   $('ipo-breakdown').textContent='';
+   return;
+  }
+  const allocation=trend.public_shares==null?'缺少配发公告数据':`公发 ${num(trend.public_shares)} 股 · 国配 ${num(trend.international_shares)} 股 · ${sourceLink('配发公告',trend.announcement)}`;
+  $('ipo-reference').innerHTML=`基准 ${esc(trend.baseline)} 日末 · ${sourceLink('首日持仓来源',trend.baseline_source)} · ${allocation}`;
+  $('ipo-newcomers').innerHTML=`<p class="hint">${esc(trend.rank_day)} 前十 · ${sourceLink('排名来源',trend.rank_source)}<br>${trend.newcomers.length?'较首日新进前十：'+trend.newcomers.map(row=>esc(ccassChineseNames[row.id]||row.name)+' ['+esc(row.id)+'] '+(row.shares!=null?num(row.shares)+' 股':row.ratio!=null?num(row.ratio)+'%':'')).join(' · '):'较首日无新进前十'}</p>`;
+  const ranking=trend.selected_ranking||[];
+  const rankTitle=esc(trend.selected_day)+' · 当日前十大托管（股）';
+  const rankedRows=ranking.map(row=>`<tr><td>${row.rank}</td><td><button type="button" class="secondary" data-ipo-broker="${esc(row.id)}">${esc(ccassChineseNames[row.id]||row.name)}</button><small> ${esc(row.id)}${row.newcomer?' · 较首日新进':''}</small></td><td>${num(row.shares)}</td><td>${ccassPercent(row.ratio)}</td><td>${esc(row.label)}</td></tr>`).join('');
+  $('ipo-ranking').innerHTML=ranking.length
+   ? `<h3>${rankTitle}</h3><p class="hint">${sourceLink('当日排名来源',trend.selected_source)} · 比例以 IPO 全球发售股数为分母 · 点击参与者看比例走势</p><div class="table-scroll"><table><thead><tr><th>排名</th><th>参与者</th><th>持仓股数</th><th>占全球发售</th><th>国配线索</th></tr></thead><tbody>${rankedRows}</tbody></table></div>`
+   : `<p class="hint">${rankTitle} · 缺少该日排名快照。</p>`;
+  const groups=Object.entries(trend.groups);
+  const ordered=trend.rows.filter(row=>row.previous_change!=null).sort((a,b)=>b.previous_change-a.previous_change);
+  const increase=ordered.find(row=>row.previous_change>0);
+  const decrease=[...ordered].reverse().find(row=>row.previous_change<0);
+  const movers=[increase&&'增加最多 '+increase.name+' '+signed(increase.previous_change)+' 股',decrease&&'减少最多 '+decrease.name+' '+signed(decrease.previous_change)+' 股'].filter(Boolean);
+  $('ipo-summary').innerHTML=`<p class="hint">截至 ${esc(trend.latest)} · 较上市首日</p><div class="ipo-summary-grid">${groups.map(([label,group])=>{
+   const point=group.values[group.values.length-1];
+   return `<div><span>${esc(label)}</span><strong>${signed(point.change)} 股</strong><small>覆盖 ${point.covered}/${group.size}</small></div>`;
+  }).join('')}</div>${movers.length?`<p>较前一数据日 · ${movers.map(esc).join(' · ')}</p>`:''}`;
+  const channels=trend.rows.map(row=>`<tr><td>${esc(row.name)}<small>${esc(row.id)} · ${esc(row.label)}</small></td><td>${num(row.initial)}</td><td>${num(row.current)}</td><td>${signed(row.change)}</td><td>${row.remaining==null?'—':(row.remaining*100).toFixed(2)+'%'}</td><td>${signed(row.previous_change)}</td></tr>`).join('');
+  const days=trend.days.map((day,index)=>`<tr><td>${esc(day)}</td>${groups.map(([,group])=>`<td>${signed(group.values[index].change)}</td>`).join('')}<td>${num(trend.prices[index]?.close)}</td><td>${money(trend.prices[index]?.turnover)}</td></tr>`).join('');
+  BrokerView.replaceContent($('ipo-breakdown'),`<div class="table-scroll"><table><thead><tr><th>观察渠道</th><th>首日股数</th><th>当日股数</th><th>较首日增减</th><th>为首日比例</th><th>较前一数据日</th></tr></thead><tbody>${channels}</tbody></table></div><div class="table-scroll"><table><thead><tr><th>香港日期</th>${groups.map(([name])=>`<th>${esc(name)}变化（股）</th>`).join('')}<th>收盘（港元）</th><th>成交额</th></tr></thead><tbody>${days}</tbody></table></div>`);
+ }
+ async function load(){
+  const sequence=++version;
+  panel.hidden=!stock.value.startsWith('HK.');
+  if(panel.hidden||!panel.open)return;
+  try{
+   const params=new URLSearchParams({code:stock.value,date:date.value});
+   const response=await fetch('/api/ipo-trend?'+params,{cache:'no-store'});
+   const payload=await response.json();
+   if(sequence!==version)return;
+   if(!response.ok)throw Error(payload.error);
+   render(payload.trend);
+  }catch(error){if(sequence===version)status.textContent=error.message}
+ }
+ const brokerPanel=$('ipo-broker-panel'), brokerHistory=$('ipo-broker-history');
+ const brokerChart=$('ipo-broker-line'), brokerTitle=$('ipo-broker-title'), brokerPoint=$('ipo-broker-point');
+ let historyVersion=0, historyPoints=[], positions=[];
+ function drawBrokerHistory(){
+  if(!brokerPanel.open||!historyPoints.length)return;
+  const width=Math.floor(brokerChart.clientWidth), height=300;
+  if(width<120)return;
+  const scale=window.devicePixelRatio||1;
+  brokerChart.width=width*scale;brokerChart.height=height*scale;
+  const ctx=brokerChart.getContext('2d');
+  ctx.setTransform(scale,0,0,scale,0,0);
+  ctx.font='12px sans-serif';ctx.fillStyle='#284638';
+  ctx.fillText('占全球发售（%）',8,16);
+  const left=Math.max(74,...historyPoints.map(row=>ctx.measureText(ccassPercent(row.hold_ratio)).width+20));
+  const right=width-24, values=historyPoints.map(row=>row.hold_ratio);
+  const dates=historyPoints.map(row=>Date.parse(row.date+'T00:00:00Z'));
+  const low=Math.min(...values), high=Math.max(...values);
+  const y=value=>245-(high===low?.5:(value-low)/(high-low))*195;
+  const x=i=>dates.length===1?(left+right)/2:left+(right-left)*(dates[i]-dates[0])/(dates[dates.length-1]-dates[0]);
+  for(const value of new Set([low,(low+high)/2,high])){
+   ctx.strokeStyle='#dfe6d8';ctx.beginPath();ctx.moveTo(left,y(value));ctx.lineTo(right,y(value));ctx.stroke();
+   ctx.textAlign='right';ctx.fillText(ccassPercent(value),left-10,y(value)+4);
+  }
+  ctx.strokeStyle='#29654c';ctx.fillStyle='#29654c';ctx.lineWidth=2;ctx.beginPath();
+  historyPoints.forEach((row,i)=>{if(i)ctx.lineTo(x(i),y(row.hold_ratio));else ctx.moveTo(x(i),y(row.hold_ratio))});
+  ctx.stroke();
+  positions=historyPoints.map((row,i)=>{
+   ctx.beginPath();ctx.arc(x(i),y(row.hold_ratio),3,0,2*Math.PI);ctx.fill();return x(i);
+  });
+  ctx.textAlign='center';
+  let previous=-Infinity;
+  historyPoints.forEach((row,i)=>{
+   if(i===0||i===historyPoints.length-1||(x(i)-previous>=55&&right-x(i)>=45)){
+    ctx.fillText(row.date.slice(5),x(i),273);previous=x(i);
+   }
+  });
+ }
+ new ResizeObserver(drawBrokerHistory).observe(brokerChart);
+ brokerChart.addEventListener('pointermove',event=>{
+  if(!positions.length||!historyPoints.length)return;
+  const x=event.clientX-brokerChart.getBoundingClientRect().left;
+  const i=positions.reduce((best,value,index)=>Math.abs(value-x)<Math.abs(positions[best]-x)?index:best,0);
+  const row=historyPoints[i];
+  brokerPoint.textContent=row.date+' · '+ccassPercent(row.hold_ratio);
+ });
+ brokerPanel.addEventListener('close',()=>{historyVersion++;historyPoints=[];positions=[]});
+ brokerPanel.addEventListener('click',event=>{if(event.target===brokerPanel&&event.clientX<brokerPanel.getBoundingClientRect().left)brokerPanel.close()});
+
+ $('ipo-ranking').addEventListener('click',async event=>{
+  const target=event.target.closest('[data-ipo-broker]');
+  if(!target)return;
+  const code=stock.value, broker=target.dataset.ipoBroker, name=target.textContent, sequence=++historyVersion;
+  brokerTitle.textContent=name+' · '+broker+' 持仓趋势';
+  historyPoints=[];positions=[];brokerChart.hidden=true;brokerPoint.textContent='';
+  if(!brokerPanel.open)brokerPanel.showModal();
+  brokerHistory.textContent='正在读取 '+name+' 的持仓历史…';
+  const stale=()=>code!==stock.value||sequence!==historyVersion;
+  const params=new URLSearchParams({code,broker});
+  const read=async()=>{
+   const response=await fetch('/api/ipo-trend?'+params,{cache:'no-store'});
+   const result=await response.json();
+   if(!response.ok)throw Error(result.error);
+   return result;
+  };
+  function show(result,note=''){
+   if(stale())return;
+   historyPoints=result.items.filter(row=>Number.isFinite(row.hold_ratio));
+   const base=historyPoints.find(row=>row.date===result.baseline);
+   const latest=historyPoints[historyPoints.length-1];
+   brokerHistory.textContent=latest
+    ? '截至 '+latest.date+' · '+ccassPercent(latest.hold_ratio)+(base?' · 较首日 '+signed(latest.hold_ratio-base.hold_ratio)+' 个百分点':'')+(note?' · '+note:'')
+    : ('暂无可计算的全球发售占比。'+note);
+   brokerChart.hidden=!latest;
+   brokerPoint.textContent=latest&&historyPoints.length>1?'移动鼠标查看各日全球发售占比。':'';
+   if(latest)drawBrokerHistory();
+  }
+  let saved;
+  try{
+   saved=await read();
+   show(saved,'正在向富途查询最新历史…');
+   if(stale())return;
+   const response=await fetch('/api/ccass-refresh',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code,broker})});
+   const result=await response.json();
+   if(!response.ok)throw Error(result.error);
+   if(!stale()){show(await read());load()}
+  }catch(error){if(!stale()){if(saved)show(saved,'显示已保存记录。'+error.message);else brokerHistory.textContent=error.message}}
+ });
+ stock.addEventListener('change',()=>{historyVersion++;if(brokerPanel.open)brokerPanel.close();brokerHistory.textContent=''});
+ button.addEventListener('click',async()=>{
+  const code=stock.value;
+  button.disabled=true;status.textContent='正在查询首日前十渠道的历史持仓…';
+  try{
+   const response=await fetch('/api/ccass-refresh',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code,trend:true})});
+   const payload=await response.json();
+   if(!response.ok)throw Error(payload.error);
+   status.textContent=payload.failed.length?'这些渠道本次查询失败，仍显示已保存数据：'+payload.failed.join('、'):'首日前十持仓已更新。';
+   await load();
+  }catch(error){status.textContent=error.message}
+  finally{button.disabled=false}
+ });
+ stock.addEventListener('change',load);
+ stock.addEventListener('ccass-ready',load);
+ date.addEventListener('change',load);
+ panel.addEventListener('toggle',load);
+}
+initializeIpoTrend();

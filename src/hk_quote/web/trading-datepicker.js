@@ -10,7 +10,7 @@ window.TradingDatePicker=(()=>{
  function open(options){
   document.getElementById('trading-calendar-overlay')?.remove();
   const opener=document.activeElement,overlay=document.createElement('div');overlay.id='trading-calendar-overlay';overlay.className='trading-calendar-overlay';
-  const panel=document.createElement('div');panel.className='trading-calendar';panel.setAttribute('role','dialog');panel.setAttribute('aria-modal','true');panel.setAttribute('aria-label','选择港股交易日期');overlay.append(panel);
+  const panel=document.createElement('div');panel.className='trading-calendar';panel.setAttribute('role','dialog');panel.setAttribute('aria-modal','true');panel.setAttribute('aria-label','选择交易日期');overlay.append(panel);
   let month=(options.selected||options.max).slice(0,7);
   const close=()=>{overlay.remove();document.removeEventListener('keydown',keydown);if(opener?.isConnected)opener.focus()};
   const keydown=event=>{if(event.key==='Escape')close();if(event.key==='Tab'){const buttons=[...panel.querySelectorAll('button:not(:disabled)')],first=buttons[0],last=buttons[buttons.length-1];if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus()}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus()}}};
@@ -22,5 +22,19 @@ window.TradingDatePicker=(()=>{
   });
   render();document.body.append(overlay);document.addEventListener('keydown',keydown);panel.querySelector('button:not(:disabled)').focus();
  }
- return {open,allowed,html};
+ function today(zone){return new Date().toLocaleDateString('sv-SE',{timeZone:zone})}
+ function bind(input,button,{zone,closed=()=>[],min=()=>'',empty='选择日期'}){
+  const options=()=>({min:min(),max:today(zone()),closed:closed()});
+  function sync(){
+   const {min,max,closed}=options();
+   if(input.value&&!allowed(input.value,min,max,closed))input.value='';
+   button.textContent=input.value||empty;
+  }
+  function select(value){input.value=value;sync();input.dispatchEvent(new Event('change'))}
+  button.addEventListener('click',()=>open({...options(),selected:input.value,onSelect:select}));
+  input.addEventListener('change',sync);
+  sync();
+  return {sync,clear:()=>select('')};
+ }
+ return {open,allowed,html,bind,today};
 })();

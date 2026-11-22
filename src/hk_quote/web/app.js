@@ -411,3 +411,13 @@ function initializeJournalCollapse(){
 refresh();setInterval(()=>{if(!document.hidden)refresh()},3000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh()});
 
 initializeJournalCollapse();
+
+const journalDates=TradingDatePicker.bind($('date'),$('date-pick'),{
+ zone:()=>$('record-symbol').value.startsWith('US.')?'America/New_York':'Asia/Hong_Kong',
+ min:()=>stockData.find(row=>row.code===$('record-symbol').value)?.listing_date||'',
+ closed:()=>{const code=$('record-symbol').value;return code.startsWith('HK.')?stockData.find(row=>row.code===code)?.closed_dates||[]:[]},
+ empty:'全部日期'
+});
+$('date-clear').addEventListener('click',journalDates.clear);
+$('record-symbol').addEventListener('change',journalDates.sync);
+$('quote-symbol').addEventListener('change',()=>{const previous=$('date').value;journalDates.sync();if(previous!==$('date').value)resetPages()});

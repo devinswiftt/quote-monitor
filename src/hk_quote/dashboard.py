@@ -19,8 +19,10 @@ from .engine import HK
 from .live import Hub
 from .connection import read_health
 from .participation import summarize
-from .watchlist import Watchlist
+from .watchlist import Watchlist, normalize_code
 from .analysis import daily_analysis
+from .ipo_trend import participant_history, refresh as refresh_ipo, trend as ipo_trend
+from .ccass_cli import fetch as fetch_ccass
 from .broker_archive import history as broker_history, initialize as initialize_broker_archive
 from .daily import daily_history,fetch_daily,day_summary,validate_history_date
 from .session import MarketSession
@@ -71,6 +73,7 @@ def main():
     stock_directory=StockDirectory(database.parent/'stock-directory.json',stock_fetch)
     us_stock_directory=StockDirectory(database.parent/'us-stock-directory.json',lambda kind:stock_fetch('catalog_us' if kind=='catalog' else kind))
     import_lock=threading.Lock()
+    ccass_lock=threading.Lock()
     target_quotes=TargetQuotes(database.parent/'zhitong-targets.json')
     target_quotes.start()
     session = secrets.token_urlsafe(32)
@@ -107,6 +110,34 @@ def main():
             nonlocal session
             if not self.valid_host() or self.headers.get('Origin') not in {f'http://{host}' for host in allowed}:
                 return self.reply(403, {'error': '拒绝跨站请求'})
+            if self.path == '/api/ccass-refresh':
+                if not self.authorized():
+                    return self.reply(401, {'error': '请先登录'})
+                if not ccass_lock.acquire(blocking=False):
+                    return self.reply(429, {'error': '正在查询持仓，请稍候'})
+                try:
+                    length = int(self.headers.get('Content-Length', '0'))
+                    if not 0 < length <= 512:
+                        raise ValueError('请求无效')
+                    payload = json.loads(self.rfile.read(length))
+                    if not isinstance(payload, dict) or not isinstance(payload.get('code'), str):
+                        raise ValueError('股票代码无效')
+                    if payload.get('trend') is True:
+                        code = normalize_code(payload['code'])
+                        if not code.startswith('HK.'):
+                            raise ValueError('仅支持港股 CCASS')
+                        failed = refresh_ipo(database, code, stock_directory.listing_date(code))
+                        return self.reply(200, {'failed': failed})
+                    broker = payload.get('broker')
+                    if not isinstance(broker, str) or not broker:
+                        raise ValueError('请选择 CCASS 参与者')
+                    return self.reply(200, fetch_ccass(database, payload['code'], broker))
+                except (ValueError, TypeError, KeyError) as error:
+                    return self.reply(400, {'error': str(error)})
+                except sqlite3.Error:
+                    return self.reply(503, {'error': '持仓缓存暂不可用'})
+                finally:
+                    ccass_lock.release()
             if self.path == '/api/futu-import':
                 if not self.authorized():return self.reply(401,{'error':'请先登录'})
                 if not import_lock.acquire(blocking=False):return self.reply(429,{'error':'正在导入，请稍候'})
@@ -226,15 +257,34 @@ def main():
                 return
             if url.path == '/api/report':
                 return self.reply(200, (root/'report.html').read_text(), 'text/html; charset=utf-8')
+            if url.path == '/api/ipo-trend':
+                if not self.authorized():
+                    return self.reply(401, {'error': '请先登录'})
+                args = parse_qs(url.query)
+                try:
+                    code = normalize_code(args.get('code', [''])[0])
+                    selected = args.get('date', [None])[0]
+                    listing = stock_directory.listing_date(code)
+                    if selected:
+                        validate_history_date(selected, listing, MarketSession().days)
+                    broker = args.get('broker', [None])[0]
+                    if broker:
+                        return self.reply(200, participant_history(database, code, broker, listing))
+                    return self.reply(200, {'trend': ipo_trend(database, code, selected, listing)})
+                except ValueError as error:
+                    return self.reply(400, {'error': str(error)})
+                except sqlite3.Error:
+                    return self.reply(503, {'error': '持仓缓存暂不可用'})
             if url.path == '/api/report-data':
                 if not self.authorized():
                     return self.reply(401, {'error':'请先登录'})
                 try:
                     requested=parse_qs(url.query).get('date',[None])[0]
+                    if requested:validate_history_date(requested)
                     current_names=dict(names)
                     current_names.update({r['code']:r['name'] for r in watch.rows() if r['name']})
                     return self.reply(200,daily_analysis(database,requested,current_names))
-                except ValueError:return self.reply(400,{'error':'日期格式应为 YYYY-MM-DD'})
+                except ValueError as error:return self.reply(400,{'error':str(error)})
                 except sqlite3.Error:return self.reply(503,{'error':'分析数据暂时忙，稍后自动重试'})
             if url.path == '/api/futu-groups':
                 if not self.authorized():return self.reply(401,{'error':'请先登录'})
@@ -253,6 +303,13 @@ def main():
                     with sqlite3.connect(database.as_uri() + '?mode=ro', uri=True, timeout=2) as db:
                         args = parse_qs(url.query)
                         quote_code=args.get('quote_symbol',[''])[0]
+                        selected_date=args.get('date',[''])[0]
+                        filter_code=args.get('symbol',[''])[0]
+                        if selected_date:
+                            try:
+                                validate_history_date(selected_date, today=datetime.now(timezone(filter_code)).date())
+                            except ValueError as error:
+                                return self.reply(400, {'error': str(error)})
                         db.execute('BEGIN')
                         page_data=alert_page(db,args)
                         alerts=page_data['alerts'];total=page_data['total']
