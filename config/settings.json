@@ -61,6 +61,12 @@
       3,
       15,
       60
-    ]
+    ],
+    "hk_long_min_samples": 8,
+    "hk_long_amount_multiple": 2,
+    "hk_long_min_change_pct": 2,
+    "hk_long_price_quantile": 0.75,
+    "hk_long_min_price_steps": 2,
+    "hk_long_max_step_share": 0.9
   }
 }

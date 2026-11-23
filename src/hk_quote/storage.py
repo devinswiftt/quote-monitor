@@ -4,7 +4,7 @@ from pathlib import Path
 from .history import export_connection
 from datetime import datetime
 from .engine import HK
-from .markets import timezone,is_us
+from .markets import timezone
 from .broker_archive import initialize as initialize_broker_archive,save as archive_brokers
 from .notice import make_notice
 from .behavior_store import initialize as initialize_behaviors

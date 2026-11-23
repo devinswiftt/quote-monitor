@@ -7,7 +7,6 @@ import threading
 from .markets import timezone,is_us
 EXPORT_LOCK=threading.RLock()
 
-from .engine import HK
 from .instruments import stock_label
 
 LABELS = {'BUY': '疑似集中主动买入', 'SELL': '疑似集中主动卖出', 'VOLUME': '异常成交放大'}

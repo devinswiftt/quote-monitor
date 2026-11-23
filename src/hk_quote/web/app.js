@@ -46,9 +46,14 @@ function chartTradingTime(ts,code=''){
  const local=ts+8*3600,day=Math.floor(local/86400),seconds=local-day*86400;
  return day*82800+seconds-Math.max(0,Math.min(3600,seconds-12*3600));
 }
+function isDarkStock(stock){
+ const quote=stock?.quote;
+ return quote?.dark_status==='TRADING' && new Date(quote.ts*1000).toLocaleDateString('sv-SE',{timeZone:'Asia/Hong_Kong'})===new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Hong_Kong'});
+}
 function chartIsTradingMinute(ts,code=''){
  if(String(code).startsWith('US.')){const cache=chartIsTradingMinute.cache||(chartIsTradingMinute.cache=new Map()),key=Math.floor(ts/60);if(cache.has(key))return cache.get(key);const formatter=chartIsTradingMinute.formatter||(chartIsTradingMinute.formatter=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit',hour12:false}));const values=Object.fromEntries(formatter.formatToParts(new Date(ts*1000)).map(p=>[p.type,p.value]));const minute=Number(values.hour)*60+Number(values.minute),result=minute>=240&&minute<1200;if(cache.size>4000)cache.clear();cache.set(key,result);return result}
  const date=new Date((ts+8*3600)*1000),minute=date.getUTCHours()*60+date.getUTCMinutes();
+ if(typeof stockData!=='undefined'&&isDarkStock(stockData.find(stock=>stock.code===code)))return minute>=975&&minute<1110;
  return (minute>=570&&minute<720)||(minute>=780&&minute<960);
 }
 function chartSvg(code,large=false){
@@ -87,7 +92,14 @@ function closeChart(){ChartHover.clear();expandedChart=null;$('chart-dialog').hi
 $('chart-close').addEventListener('click',closeChart);
 document.addEventListener('keydown',event=>{if(event.key==='Escape')closeChart();const target=event.target.closest?.('[data-chart-open]');if(target&&(event.key==='Enter'||event.key===' ')){event.preventDefault();openChart(target.dataset.chartOpen)}});
 $('chart-dialog').addEventListener('click',event=>{if(event.target===$('chart-dialog'))closeChart()});
+function sameBookDay(s){
+ const day=ts=>Number.isFinite(ts)?new Date(ts*1000).toLocaleDateString('sv-SE',{timeZone:'Asia/Hong_Kong'}):null;
+ const bookDay=day(s.book?.received_at||s.book?.ts);
+ return !!bookDay&&bookDay===day(s.broker?.received_at||s.broker?.ts);
+}
 function depthBrokerNames(s,side,position){
+ if(isDarkStock(s))return '<span class="muted">暗盘暂未提供经纪队列</span>';
+ if(!sameBookDay(s))return '<span class="muted">等待当日经纪队列</span>';
  const rows=(s.broker?.[side]||[]).filter(r=>Number(r.position)===position);
  return rows.length?rows.map(r=>`<span class="broker-tag">${esc(r.name)} <small>[${esc(r.id)}]</small></span>`).join(' '):'<span class="muted">该档暂无经纪数据</span>';
 }
@@ -95,8 +107,8 @@ function queuePanels(s){
  if(String(s.code||'').startsWith('US.')){const side=(key,label)=>`<section><h3>${label}</h3><table><thead><tr><th>档位</th><th>美元</th><th>挂单股数</th><th>订单数</th></tr></thead><tbody>${(s.book?.[key]||[]).map((r,i)=>`<tr><td>${i+1}</td><td>${Number(r[0]).toFixed(3)}</td><td>${Number(r[1]).toLocaleString('zh-CN')}</td><td>${r[2]>0?r[2]:'未提供'}</td></tr>`).join('')}</tbody></table></section>`;return `<p class="broker-note">${s.book?'盘口接收 '+esc(when(s.book.received_at||s.book.ts,s.code))+' ET':'等待盘口数据；权限不足时价格与成交监控仍可运行'}。仅显示数据源可见盘口，不提供成交券商身份。</p><div class="live-book-grid">${side('bid','买盘 BID')}${side('ask','卖盘 ASK')}</div>`}
 
  const number=v=>Number(v||0).toLocaleString('zh-CN');
- const side=(key,label)=>{const levels=s.book?.[key]||[];return `<section><h3>${label}</h3><table><thead><tr><th>档位</th><th>价格</th><th>挂单总股数</th><th>订单笔数</th><th>该档券商（编号）</th></tr></thead><tbody>${levels.map((r,i)=>`<tr><td>${i+1}</td><td>${Number(r[0]).toFixed(3)}</td><td>${number(r[1])}</td><td>${number(r[2])}</td><td class="depth-brokers">${depthBrokerNames(s,key,i+1)}</td></tr>`).join('')}</tbody></table><p class="muted">可见档位合计：${number(levels.reduce((n,r)=>n+Number(r[1]),0))} 股 · ${number(levels.reduce((n,r)=>n+Number(r[2]),0))} 笔订单</p>${(s.broker?.[key]||[]).some(r=>Number(r.position)>levels.length)?`<p class="muted">另有 ${(s.broker?.[key]||[]).filter(r=>Number(r.position)>levels.length).length} 条经纪队列信息超出当前 ${levels.length} 档盘口，已保留原始数据。</p>`:''}</section>`};
- return `<p class="broker-note">盘口接收：${esc(when(s.book?.received_at||s.book?.ts))} · 经纪队列接收：${esc(when(s.broker?.received_at||s.broker?.ts))}<br>数据随行情推送更新；挂单股数是该价格合计，不是某家券商的股数，队列不代表成交归属。</p><div class="live-book-grid">${side('bid','买盘 · BID')}${side('ask','卖盘 · ASK')}</div>`;
+ const side=(key,label)=>{const levels=s.book?.[key]||[];return `<section><h3>${label}</h3><table><thead><tr><th>档位</th><th>价格</th><th>挂单总股数</th><th>订单笔数</th><th>该档券商（编号）</th></tr></thead><tbody>${levels.map((r,i)=>`<tr><td>${i+1}</td><td>${Number(r[0]).toFixed(3)}</td><td>${number(r[1])}</td><td>${number(r[2])}</td><td class="depth-brokers">${depthBrokerNames(s,key,i+1)}</td></tr>`).join('')}</tbody></table><p class="muted">可见档位合计：${number(levels.reduce((n,r)=>n+Number(r[1]),0))} 股 · ${number(levels.reduce((n,r)=>n+Number(r[2]),0))} 笔订单</p>${sameBookDay(s)&&(s.broker?.[key]||[]).some(r=>Number(r.position)>levels.length)?`<p class="muted">另有 ${(s.broker?.[key]||[]).filter(r=>Number(r.position)>levels.length).length} 条经纪队列信息超出当前 ${levels.length} 档盘口，已保留原始数据。</p>`:''}</section>`};
+ return `<p class="broker-note">盘口接收：${esc(when(s.book?.received_at||s.book?.ts))} · 经纪队列接收：${esc(when(s.broker?.received_at||s.broker?.ts))}<br>${s.broker&&!sameBookDay(s)?'经纪队列与盘口日期不一致，等待当日队列更新。':'盘口与经纪队列分别更新。'}订单笔数为该价位的委托数量；券商队列反映挂盘参与者，无法逐笔对应订单。</p><div class="live-book-grid">${side('bid','买盘 · BID')}${side('ask','卖盘 · ASK')}</div>`;
 }
 function updateQueue(code){const s=stockData.find(s=>s.code===code),node=document.querySelector('[data-live-queues="'+code+'"]');if(s&&node)node.innerHTML=queuePanels(s)}
 function renderConnection(state){
@@ -131,7 +143,7 @@ function flushLivePaint(){
   if(flags.price&&quote){
    const node=document.querySelector('[data-live-price="'+code+'"]');if(node)node.textContent=Number(quote.price).toFixed(3);
    const change=document.querySelector('[data-price-change="'+code+'"]');if(change&&stock)BrokerView.replaceContent(change,priceChange(stock));
-   const capital=document.querySelector('[data-capitalization="'+code+'"]');if(capital&&stock)BrokerView.replaceContent(capital,capitalization(stock));
+   const capital=document.querySelector('[data-capitalization="'+code+'"]');if(capital&&stock)BrokerView.replaceContent(capital,isDarkStock(stock)?'':capitalization(stock));
    const stamp=document.querySelector('[data-live-time="'+code+'"]');if(stamp)stamp.innerHTML=priceTime(code);
    if(expandedChart===code)$('chart-live-price').textContent='最新价 '+Number(quote.price).toFixed(3)+(code.startsWith('US.')?' 美元':' 港元');
    const source=document.querySelector('[data-quote-source="'+code+'"]');if(source&&stock&&source.closest('details')?.open)BrokerView.replaceContent(source,quoteSourceInfo(stock));
@@ -158,6 +170,7 @@ function connectLive(){
    return;
   }
   if(!['quote','tick','auction_tick'].includes(e.kind))return;
+  if(e.kind==='quote'){const stock=stockData.find(s=>s.code===e.code);if(stock)stock.quote=e}
   rememberPrice(e);
   scheduleLivePaint(e.code,e.kind);
   if(e.kind==='auction_tick'){
@@ -218,25 +231,46 @@ function usStockCard(s){
  const depth=s.depth?Math.min(s.depth.bids,s.depth.asks):null;
  const state=s.monitoring_enabled===false?'监控已停止':monitoringLabels[s.monitoring_state]||s.monitoring_state;
  const unit='美元';
- return `<article class="card quote-card"><div class="quote-layout"><div class="quote-overview"><div class="card-top"><span class="code">${esc(s.name||s.code)}</span><span class="badge">美股 · ${phase}</span></div><div class="muted">${esc(s.code)} · 纽约时间（自动处理夏令时）</div><div class="price"><strong data-live-price="${esc(s.code)}">${price!=null?Number(price).toFixed(3):'—'}</strong><span data-price-change="${esc(s.code)}">${priceChange(s)}</span><span class="quote-currency">美元${!quote?' · 快照参考价':''}</span></div><div data-capitalization="${esc(s.code)}">${capitalization(s)}</div><div class="quote-update" data-live-time="${esc(s.code)}">${priceTime(s.code)}</div><p class="hint">${esc(state)} · 盘前、常规盘、盘后独立建立成交基线；常规盘无午休。</p><p class="source-note">数据来自 OpenD 可用的 Nasdaq／NYSE Arca 行情，不代表全市场完整成交与盘口。夜盘暂不纳入本版监控；半日市常规盘提前结束，盘后暂停。</p><div class="chart-button"><button type="button" class="chart-expand-button" data-chart-open="${esc(s.code)}">放大走势图 ↗</button><div class="mini-chart" data-chart="${esc(s.code)}" data-chart-open="${esc(s.code)}" role="button" tabindex="0" aria-label="放大美股走势图"></div></div><div class="muted">纽约交易日内分钟价与成交股数；缺失分钟补齐仅作展示。</div><div data-daily-panel="${esc(s.code)}">${DailyChart.panel(s.code)}</div><p class="muted">本时段动态门槛：${s.threshold_status?.value?money(s.threshold_status.value.threshold,s.code)+' · '+s.threshold_status.value.samples+' 个样本':'量价采样中；预热3分钟且至少60个滚动样本'}</p><p class="hint">可监控成交放大及疑似买卖压力；不提供港股式成交券商身份、经纪商净买卖和入通目标价。</p><details class="quote-data-notes"><summary>数据说明</summary><div data-quote-source="${esc(s.code)}">${quoteSourceInfo(s)}</div></details></div><section class="quote-depth"><h3>实时买卖盘 ${depth==null?'':depth+'档'} · 美元</h3><div class="live-queues" data-live-queues="${esc(s.code)}">${queuePanels(s)}</div></section></div></article>`;
+ return `<article class="card quote-card"><div class="quote-layout"><div class="quote-overview"><div class="card-top"><span class="code">${esc(s.name||s.code)}</span><span class="badge">美股 · ${phase}</span></div><div class="muted">${esc(s.code)} · 纽约时间（自动处理夏令时）</div><div class="price"><strong data-live-price="${esc(s.code)}">${price!=null?Number(price).toFixed(3):'—'}</strong><span data-price-change="${esc(s.code)}">${priceChange(s)}</span><span class="quote-currency">美元${!quote?' · 快照参考价':''}</span></div><div data-capitalization="${esc(s.code)}">${capitalization(s)}</div><div class="quote-update" data-live-time="${esc(s.code)}">${priceTime(s.code)}</div><p class="hint">${esc(state)} · 盘前、常规盘、盘后独立建立成交基线；常规盘无午休。</p><p class="source-note">数据来自 OpenD 可用的 Nasdaq／NYSE Arca 行情，不代表全市场完整成交与盘口。夜盘暂不纳入本版监控；半日市常规盘提前结束，盘后暂停。</p><div class="chart-button"><button type="button" class="chart-expand-button" data-chart-open="${esc(s.code)}">放大走势图 ↗</button><div class="mini-chart" data-chart="${esc(s.code)}" data-chart-open="${esc(s.code)}" role="button" tabindex="0" aria-label="放大美股走势图"></div></div><div class="muted">纽约交易日内分钟价与成交股数；缺失分钟补齐仅作展示。</div><div data-daily-panel="${esc(s.code)}">${DailyChart.panel(s.code)}</div><p class="muted">本时段动态门槛：${s.threshold_status?.value?money(s.threshold_status.value.threshold,s.code)+' · '+s.threshold_status.value.samples+' 个样本':'量价采样中；预热3分钟，60秒窗口至少8个历史样本'}</p><p class="hint">可监控成交放大及疑似买卖压力；不提供港股式成交券商身份、经纪商净买卖和入通目标价。</p><details class="quote-data-notes"><summary>数据说明</summary><div data-quote-source="${esc(s.code)}">${quoteSourceInfo(s)}</div></details></div><section class="quote-depth"><h3>实时买卖盘 ${depth==null?'':depth+'档'} · 美元</h3><div class="live-queues" data-live-queues="${esc(s.code)}">${queuePanels(s)}</div></section></div></article>`;
 }
 
+let watchlistMarkup='';
 function stocks(items){
  const selected=$('quote-symbol').value||defaultQuoteSymbol;
  $('quote-symbol').innerHTML=items.map(s=>`<option value="${esc(s.code)}">${esc(s.name||s.code)} ${esc(s.code)}</option>`).join('');
  if(items.some(s=>s.code===selected))$('quote-symbol').value=selected;
  else if(items.some(s=>s.code===defaultQuoteSymbol))$('quote-symbol').value=defaultQuoteSymbol;
  updateDefaultStockButton();
- $('watchlist').innerHTML=items.map(s=>`<div class="watch"><strong>${esc(s.name||s.code)}</strong><span>${esc(s.code)}</span></div>`).join('');
+ const watchlist=items.map(s=>`<button type="button" class="watch" data-watch-code="${esc(s.code)}"><strong>${esc(s.name||s.code)}</strong><span>${esc(s.code)}</span></button>`).join('');
+ if(watchlist!==watchlistMarkup){
+  $('watchlist').innerHTML=watchlist;
+  watchlistMarkup=watchlist;
+ }
+ document.querySelectorAll('#watchlist [data-watch-code]').forEach(button=>{
+  button.setAttribute('aria-pressed',String(button.dataset.watchCode===$('quote-symbol').value));
+ });
  BrokerView.replaceContent($('cards'),items.filter(s=>s.code===$('quote-symbol').value).map(s=>{
   if(String(s.code||'').startsWith('US.'))return usStockCard(s);
   const incoming=[s.quote,s.tick,...(s.auction_ticks||[])].filter(Boolean).sort((a,b)=>b.ts-a.ts)[0]; if(incoming)rememberPrice(incoming);
+  const dark=isDarkStock(s);
   const d=s.depth,fresh=d&&Date.now()/1000-d.ts<45,depth=d?Math.min(d.bids,d.asks):null;
-  return `<article class="card quote-card"><div class="quote-layout"><div class="quote-overview"><div class="card-top"><span class="code">${esc(s.name||s.code)}</span><span class="badge ${!fresh||depth<10?'warn':''}">${!fresh?'状态待更新':depth+' 档盘口'}</span></div><div class="muted">${esc(s.code)}</div><div class="price"><strong data-live-price="${esc(s.code)}">${livePrices[s.code]?Number(livePrices[s.code].price).toFixed(3):'—'}</strong><span data-price-change="${esc(s.code)}">${priceChange(s)}</span> <span class="quote-currency">港元</span></div><div class="quote-target-row">${connectTarget(s)}</div><div class="quote-facts-block"><div data-capitalization="${esc(s.code)}">${capitalization(s)}</div>${connectTargetInfo(s)}</div><div class="quote-update" data-live-time="${esc(s.code)}">${priceTime(s.code)}</div><details class="quote-data-notes"><summary>数据说明</summary><div data-quote-source="${esc(s.code)}">${quoteSourceInfo(s)}</div></details><div data-auction-panel="${esc(s.code)}">${auctionPanel(s)}</div><div class="chart-button"><button type="button" class="chart-expand-button" data-chart-open="${esc(s.code)}">放大走势图 ↗</button><div class="mini-chart" data-chart="${esc(s.code)}" data-chart-open="${esc(s.code)}" role="button" tabindex="0" aria-label="放大${esc(s.name||s.code)}走势图"></div></div><div class="muted">上：分钟成交价 · 下：成交量（股） · 空缺沿用前价并标记</div><div data-daily-panel="${esc(s.code)}">${DailyChart.panel(s.code)}</div><p class="muted">动态门槛：${s.threshold_status?.value?money(s.threshold_status.value.threshold)+' · '+s.threshold_status.value.samples+' 个样本':'量价采样中；预热3分钟且至少60个滚动样本'}</p><p class="muted">${esc(s.monitoring_enabled===false?'行为监控已停止':s.monitoring_state==='waiting_session'?'行为监控等待交易时段':s.behavior_status?.value?.message||'行为监控：等待启用或采样')}</p><div class="card-bottom"><span>日内成交 ${money(s.day?.turnover)}</span><span>经纪 ${s.broker?(s.broker.bid.length+s.broker.ask.length)+' 条':'未采集'}</span></div><div class="stock-flow" data-stock-flow="${esc(s.code)}">${stockFlow(s)}</div></div><section class="quote-depth"><h3>实时买卖盘 · 挂盘与券商</h3><div class="live-queues" data-live-queues="${esc(s.code)}">${queuePanels(s)}</div></section></div></article>`;
+  return `<article class="card quote-card"><div class="quote-layout"><div class="quote-overview"><div class="card-top"><span class="code">${esc(s.name||s.code)}</span><span class="badge ${!fresh||depth<10?'warn':''}">${dark?'暗盘交易中 · '+(s.book?.bid?.length||0)+' 档盘口':!fresh?'状态待更新':depth+' 档盘口'}</span></div><div class="muted">${esc(s.code)}</div><div class="price"><strong data-live-price="${esc(s.code)}">${livePrices[s.code]?Number(livePrices[s.code].price).toFixed(3):'—'}</strong><span data-price-change="${esc(s.code)}">${priceChange(s)}</span> <span class="quote-currency">港元</span></div><div class="quote-target-row">${dark?'':connectTarget(s)}</div><div class="quote-facts-block"><div data-capitalization="${esc(s.code)}">${dark?'':capitalization(s)}</div>${dark?'':connectTargetInfo(s)}</div><div class="quote-update" data-live-time="${esc(s.code)}">${priceTime(s.code)}</div><details class="quote-data-notes"><summary>数据说明</summary><div data-quote-source="${esc(s.code)}">${quoteSourceInfo(s)}</div></details><div data-auction-panel="${esc(s.code)}">${auctionPanel(s)}</div><div class="chart-button"><button type="button" class="chart-expand-button" data-chart-open="${esc(s.code)}">放大走势图 ↗</button><div class="mini-chart" data-chart="${esc(s.code)}" data-chart-open="${esc(s.code)}" role="button" tabindex="0" aria-label="放大${esc(s.name||s.code)}走势图"></div></div><div class="muted">上：分钟成交价 · 下：成交量（股） · 空缺沿用前价并标记</div><div data-daily-panel="${esc(s.code)}">${DailyChart.panel(s.code)}</div><p class="muted">动态门槛：${s.threshold_status?.value?money(s.threshold_status.value.threshold)+' · '+s.threshold_status.value.samples+' 个样本':'量价采样中；预热3分钟，60秒窗口至少8个历史样本'}</p><p class="muted">${esc(dark?(s.monitoring_enabled===false?'暗盘监控已停止':s.monitoring_state==='warming'?'暗盘量价监控预热中':'暗盘量价监控运行中'):s.monitoring_enabled===false?'行为监控已停止':s.monitoring_state==='waiting_session'?'行为监控等待交易时段':s.behavior_status?.value?.message||'行为监控：等待启用或采样')}</p><div class="card-bottom"><span>日内成交 ${money(s.day?.turnover)}</span><span>经纪 ${s.broker?(s.broker.bid.length+s.broker.ask.length)+' 条':'未采集'}</span></div><div class="stock-flow" data-stock-flow="${esc(s.code)}">${dark?'<p class="hint">暗盘数据独立观察，券商净买卖统计暂不可用。</p>':stockFlow(s)}</div></div><section class="quote-depth"><h3>实时买卖盘 · 挂盘与券商</h3><div class="live-queues" data-live-queues="${esc(s.code)}">${queuePanels(s)}</div></section></div></article>`;
  }).join(''));
  Object.keys(chartBars).forEach(drawChart);
 }
 $('quote-symbol').addEventListener('change',()=>{stocks(stockData);if(!syncRecordSelection($('quote-symbol').value)){requestVersion++;refresh()}});
+$('watchlist').addEventListener('click',event=>{
+ const button=event.target.closest('button[data-watch-code]');
+ if(!button)return;
+ const select=$('quote-symbol');
+ const code=button.dataset.watchCode;
+ if(!stockData.some(stock=>stock.code===code))return;
+ if(select.value!==code){
+  select.value=code;
+  select.dispatchEvent(new Event('change'));
+ }
+ $('quote-section').scrollIntoView({block:'start'});
+});
 function updateDefaultStockButton(){
  const selected=$('quote-symbol').value,button=$('set-default-stock');
  button.disabled=!selected||selected===defaultQuoteSymbol;
@@ -247,6 +281,7 @@ $('set-default-stock').addEventListener('click',async()=>{
  try{await monitorAction('set_default',$('quote-symbol').value)}catch(e){$('monitor-message').textContent=e.message}finally{updateDefaultStockButton()}
 });
 function auctionPanel(s){
+ if(isDarkStock(s))return '<p class="source-note">当前阶段：富途暗盘（香港时间）· 涨跌相对发行参考价</p>';
  const stages={PRE_AUCTION:'盘前竞价',CONTINUOUS:'连续交易',CLOSE_AUCTION:'收盘竞价',AUCTION_SETTLING:'竞价结束收尾',BREAK:'午休',CLOSED:'休市'};
  const ticks=s.auction_ticks||[];
  return `<p class="source-note">当前阶段：${stages[marketStage]||'等待确认'}（香港时间）</p>${['PRE_AUCTION','CLOSE_AUCTION','AUCTION_SETTLING'].includes(marketStage)?'<p class="hint">报价与挂盘持续接收；最新价不是参考平衡价格，竞价成交以富途实际推送为准。竞价不套用连续交易异动规则。</p>':''}${ticks.length?`<details data-broker-disclosure="auction-trades:${esc(s.code)}"><summary>当日竞价成交 · ${ticks.length} 笔（最多展示最近50笔）</summary><div class="table-scroll"><table><thead><tr><th>香港时间</th><th>成交价</th><th>成交股数</th><th>成交额</th></tr></thead><tbody>${ticks.map(t=>`<tr><td>${esc(when(t.ts))}</td><td>${Number(t.price).toFixed(3)}</td><td>${Number(t.volume).toLocaleString('zh-CN')}</td><td>${money(t.amount)}</td></tr>`).join('')}</tbody></table></div></details>`:''}`;

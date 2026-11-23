@@ -30,6 +30,5 @@ def daily_analysis(database, date=None, names=None):
         analyzer=BrokerAttribution(db,start,end,evidence_events)
         for row in result:row['broker_attribution']=analyzer.analyze(row['alert'])
         for behavior in behaviors:behavior['broker_attribution']=analyzer.analyze(behavior)
-        anomaly_events=[dict(r['alert'],reference='#'+str(r['id']),broker_attribution=r['broker_attribution']) for r in result]+[dict(b,reference='B'+str(b['id'])) for b in behaviors]
-        insights=intraday_insights(db,start,end,analyzer.samples,anomaly_events)
+        insights=intraday_insights(db,start,end,analyzer.samples)
     return dict(insights=insights,behaviors=behaviors,date=day.strftime('%Y-%m-%d'), names=labels, rows=result, summary=summarize([r['alert'] for r in result]), updated_at=datetime.now(HK).timestamp())

@@ -4,7 +4,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from .profile import TurnoverProfile
 from .rapid_move import RapidDetector
-from .markets import is_us,NY,us_phase,us_period
+from .markets import is_us, us_phase, us_period
 
 HK = ZoneInfo("Asia/Hong_Kong")
 
@@ -47,7 +47,7 @@ class Engine:
         self.profiles = {}
 
     def learn(self, event):
-        if event['kind'] == 'tick' and continuous(event['ts'],event['code']):
+        if event['kind'] == 'tick' and (continuous(event['ts'],event['code']) or event.get('market_session')=='HK_DARK'):
             if self.c.get('rapid_move', {}).get('enabled'):
                 profile = self.profiles.setdefault(event['code'], RapidDetector(
                     event['code'], self.c['rapid_move'], self.c['window_seconds']))
@@ -86,7 +86,7 @@ class Engine:
                 while s['books'] and s['books'][0]['ts'] < ts - 10:
                     s['books'].popleft()
             return None
-        if ts < s['last'] or not continuous(ts,code):
+        if ts < s['last'] or not (continuous(ts,code) or event.get('market_session')=='HK_DARK'):
             return None
         # Quiet trading is valid data, not evidence of a feed outage.
         if session(ts,code) != session(s['last'],code):

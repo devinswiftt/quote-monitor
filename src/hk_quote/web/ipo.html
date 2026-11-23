@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>港股新股中心</title>
+<link rel="stylesheet" href="/style.css">
+<script src="/chart-hover.js" defer></script>
+<script src="/daily-chart.js" defer></script>
+<script src="/ipo.js" defer></script>
+</head>
+<body>
+<main class="ipo-page">
+  <a class="secondary" href="/">← 返回行情与异动记录</a>
+  <h1>港股新股中心</h1>
+  <section class="feed">
+    <div class="section-title">
+      <h2>港股新股列表</h2>
+      <button id="ipo-reload" type="button" class="secondary">刷新列表</button>
+    </div>
+    <div id="ipo-filters" role="group" aria-label="上市阶段">
+      <button class="secondary" type="button" data-stage="open" aria-pressed="false">认购中</button>
+      <button class="secondary" type="button" data-stage="pending" aria-pressed="true">待上市</button>
+      <button class="secondary" type="button" data-stage="listed" aria-pressed="false">已上市</button>
+    </div>
+    <p id="ipo-status" class="hint" role="status">正在向富途读取新股…</p>
+    <div class="table-scroll">
+      <table id="ipo-table" class="monitor-table" hidden>
+        <thead>
+          <tr><th scope="col">股票</th><th scope="col">阶段</th><th scope="col">认购截止</th><th scope="col">上市日期</th><th scope="col">发售价（港元）</th></tr>
+        </thead>
+        <tbody id="ipo-rows"></tbody>
+      </table>
+    </div>
+  </section>
+<dialog id="ipo-chart" aria-labelledby="ipo-chart-title">
+  <div class="chart-dialog-header"><h2 id="ipo-chart-title"></h2><form method="dialog"><button class="secondary">关闭</button></form></div>
+  <div id="ipo-chart-content" aria-live="polite"></div>
+</dialog>
+</main>
+</body>
+</html>

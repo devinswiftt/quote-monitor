@@ -1,8 +1,8 @@
 """On-demand unadjusted daily candles, cached independently of live monitoring."""
 from datetime import datetime,timedelta
 import json,sqlite3,time,math
-from .engine import HK,timestamp
-from .markets import timezone,parse_time,is_us
+from .engine import HK
+from .markets import timezone, parse_time
 
 
 def daily_bar(row,code="HK"):

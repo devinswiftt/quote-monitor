@@ -1,7 +1,7 @@
 """Keep market capitalization in the original Futu snapshot definitions."""
 import math
 import time
-from .markets import parse_time,is_us
+from .markets import parse_time
 
 
 def snapshot_event(row,now=None):

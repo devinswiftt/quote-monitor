@@ -1,8 +1,7 @@
 """Persistent episodes and links; raw alerts remain unchanged."""
 from copy import deepcopy
 import json
-import sqlite3
-from .behavior import BehaviorEngine, LABELS, PHASES
+from .behavior import BehaviorEngine
 
 
 def initialize(db):

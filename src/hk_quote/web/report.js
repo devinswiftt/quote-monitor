@@ -40,7 +40,6 @@ function renderBrokerPeriods(code){
  const audit=r=>`<details data-broker-disclosure="broker-period-${esc(code)}-${esc(r.name)}"><summary>席位编号、分类依据与计算</summary><p class="hint">渠道分类：${esc(r.channel_profile?.label||'待核实')} · ${esc(r.channel_profile?.basis||'暂无已核实资料')}。核实日期：${esc(r.channel_profile?.reviewed_on||'未核实')}。</p>${(r.channel_profile?.sources||[]).map(s=>`<a href="${esc(s.url)}" target="_blank" rel="noopener noreferrer">${esc(s.title)}</a>`).join(' · ')}<p class="hint">同一券商下这些编号继承同一渠道标签；没有编号级客户身份信息。</p><p class="hint">合并编号：${r.ids.length?r.ids.map(esc).join(' / '):'净量接口无编号，队列未捕捉对应席位'}</p>${['morning','afternoon'].map(key=>{const period=r[key],coverage=value.periods[key];return `<p class="hint">${key==='morning'?'上午':'下午'}挂盘在场：买侧 ${period.bid} / 卖侧 ${period.ask} 次；${period.present}/${coverage.valid} 个有效采样点出现。${period.net==null?esc(period.reason):key==='morning'?'上午净量取午间源快照的当日累计值，包含开盘后的全部累计交易。':'下午净量 = 下午累计净量 − 午间累计净量。'}${period.from_source?'比较源时间 '+esc(period.from_source)+' → '+esc(period.to_source):''}</p>`}).join('')}<p class="hint">每10秒固定采样；同券商同侧多个编号只计一次，不能按编号数量放大活跃度。双侧可同时出现。只合并来源中一致的券商名称，不凭相似名字猜测集团归属。榜外不当作零，净量未知时不能据挂盘确定真实成交方向。</p></details>`;
  BrokerView.replaceContent($('seat-analysis'),`<p class="seat-read-guide">直接看上午、下午哪些券商净买入或净卖出；同一券商的席位合并为一行。净买卖以源快照为依据，挂盘统计单独标注。标签按公开业务资料区分零售平台、机构业务、综合渠道；不能据此认定具体交易是机构或散户。待核实不强行归类，展开可查来源。</p><div class="broker-period-grid">${summary}</div><p class="hint">上午源时间 ${esc(value.morning_source||'缺失')}；午间基准 ${esc(value.noon_source||'缺失')}；下午源时间 ${esc(value.afternoon_source||'缺失')}。对照表按当日券商总成交量降序排列；相同成交量再按净买卖变化排序。数据源只覆盖上榜券商，成交量缺失排在最后，不当作零；无法拆分到具体席位编号。四栏净买卖榜仍按对应净量大小排列。</p><div class="table-scroll"><table class="broker-period-table"><thead><tr><th>券商</th><th>当日总成交量 ↓</th><th>上午：谁在净买／净卖</th><th>下午：谁在净买／净卖</th><th>方向对照与席位</th></tr></thead><tbody>${rows.slice(seatPage*10,seatPage*10+10).map(r=>`<tr><td><strong>${esc(r.name)}</strong>${brokerChannelBadge(r.channel_profile)}<small>${r.ids.length} 个已捕捉席位</small></td><td><strong>${r.total_volume==null?'未知':num(r.total_volume/10000)+' 万股'}</strong><small>${r.volume_source?esc(r.volume_source):'当前源快照未提供，排在末尾'}</small></td><td>${netCell(r.morning)}</td><td>${netCell(r.afternoon)}</td><td><p>${esc(conclusion(r))}</p>${audit(r)}</td></tr>`).join('')}</tbody></table></div>${rows.length?pager('seat',seatPage,rows.length):empty('没有券商记录。')}`);
 }
-function renderSeats(code){renderBrokerPeriods(code)}
 
 function evidenceItems(code){return [...(data.behaviors||[]).filter(r=>r.code===code).map(r=>({ref:'B'+r.id,ts:r.started_at,label:BehaviorView.labels[r.type],behavior:r,attribution:r.broker_attribution})),...(data.rows||[]).filter(r=>r.alert.code===code).map(r=>({ref:'#'+r.id,ts:r.alert.ts,label:r.alert.signal_label||labels[r.alert.signal]||r.alert.signal,row:r,attribution:r.broker_attribution}))].sort((a,b)=>b.ts-a.ts)}
 function renderIntervals(items){
@@ -61,7 +60,7 @@ function render(){
  $('report-kpis').innerHTML=[['成交信号',all.length,'原始成交提醒'],['行为观察',allBehaviors.length,`曾确认 ${confirmed} · 仅观察 ${allBehaviors.length-confirmed}`],['已合并券商',data.insights?.broker_periods?.[code]?.brokers?.length||0,'同券商不同席位合并，上午与下午分别对照']].map(([label,n,note])=>`<article class="card"><p class="eyebrow">${label}</p><div class="report-number">${n}<small>${label==='已合并券商'?'家':'条'}</small></div><p class="muted">${note}</p></article>`).join('');
  BrokerView.replaceContent($('report-price'),priceChart(data.insights?.prices?.[code]||[],events));
  BrokerView.replaceContent($('report-behaviors'),BehaviorView.render(data.behaviors||[],data.names,code,$('report-behavior-type').value,$('report-behavior-phase').value,true));
- renderSeats(code);renderIntervals(evidenceItems(code));
+ renderBrokerPeriods(code);renderIntervals(evidenceItems(code));
  const ready=all.filter(r=>r.profile?.status==='ready').length;
  BrokerView.replaceContent($('analysis-quality'),`<p>券商异动采样较完整 ${ready} / ${all.length} 条成交信号。缺失时段不推算、不填零。</p><p>席位按保存的完整队列统计；队列位置不自动等同于价格档位。买卖两侧可同时出现，同一侧重复席位每次只记一次。</p><p>挂盘时间为本机接收时间；净买卖按数据源时间对齐。前后快照间隔超过 5 分钟不用于单次异动关联；同一区间多条事件只共同参考。</p><p>行为标签描述价格、成交与盘口表现；在场比例、净量变化均不能认定实际成交归属或庄家身份。收盘后可继续查看保存的数据。</p>`);
 }
@@ -118,6 +117,22 @@ function ccassPercent(value){
 }
 function initializeIpoTrend(){
  const panel=$('module-ipo-trend'), button=$('ipo-update'), status=$('ipo-status');
+ const authorize=$('ipo-authorize');
+ authorize.addEventListener('click',async()=>{
+  const page=window.open('about:blank','_blank');
+  if(!page){status.textContent='请允许弹出窗口后再授权。';return}
+  page.opener=null;
+  authorize.disabled=true;
+  try{
+   const response=await fetch('/api/futu-authorize',{method:'POST'});
+   const result=await response.json();
+   if(!response.ok)throw Error(result.error);
+   page.location.replace(result.url);
+   status.textContent='请在富途页面完成授权，然后返回这里更新持仓。';
+  }catch(error){page.close();status.textContent=error.message}
+  finally{authorize.disabled=false}
+ });
+
  const stock=$('report-symbol'), date=$('analysis-date');
  let version=0;
  function sourceLink(text, source){

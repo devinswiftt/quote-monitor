@@ -91,3 +91,25 @@ class RapidMoveTests(unittest.TestCase):
   rows=self.burst(e,[100.1,100.2,100.3])
   self.assertEqual(len(rows),1)
   self.assertTrue(rows[0]['motion']['spread_available'])
+
+
+class DarkSessionTests(unittest.TestCase):
+ def test_explicit_dark_session_receives_same_detector_and_unmarked_closed_ticks_do_not(self):
+  config=json.loads(Path('config/settings.json').read_text())
+  start=timestamp('2026-11-23 16:15:00')
+  engine=Engine(config)
+  def tick(t,price=52,amount=100):
+   return dict(kind='tick',code='HK.09941',ts=start+t,sequence=str(t),
+               price=price,amount=amount,direction='NEUTRAL',market_session='HK_DARK')
+  for i in range(361):
+   engine.process(tick(i*.5,52+(i%2)*.001))
+  self.assertIn('HK.09941',engine.profiles)
+  alerts=[]
+  for i in range(8):
+   alert=engine.process(tick(181+i*.5,52+i*.2,10000))
+   if alert:alerts.append(alert)
+  self.assertTrue(alerts)
+  ordinary=Engine(config)
+  value=tick(1);value.pop('market_session')
+  self.assertIsNone(ordinary.process(value))
+  self.assertNotIn('HK.09941',ordinary.profiles)

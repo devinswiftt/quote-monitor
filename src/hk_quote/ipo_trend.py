@@ -5,7 +5,7 @@ from pathlib import Path
 import re
 import sqlite3
 
-from .ccass_cli import fetch
+from .ccass_http import fetch
 from .engine import HK
 
 REFERENCE_FILE = Path('config/ipo-reference.json')
@@ -51,9 +51,9 @@ def top_ten(rows):
 def first_day_rows(db, code, baseline, reference, tables):
     if reference.get('listing_date') == baseline and reference.get('baseline'):
         return sorted(reference['baseline'], key=lambda row: (-row['shares'], row['id']))
-    if 'ccass_cli_cache' in tables and baseline:
+    if 'ccass_cache' in tables and baseline:
         row = db.execute(
-            "SELECT payload FROM ccass_cli_cache WHERE code=? AND broker='' AND day=?",
+            "SELECT payload FROM ccass_cache WHERE code=? AND broker='' AND day=?",
             (code, baseline),
         ).fetchone()
         if row:
@@ -96,7 +96,7 @@ def trend(database, code, as_of=None, listing_date=None):
         if not tracked:
             return dict(rows=[], days=[], message=f'缺少 {baseline} 的首日 CCASS 持仓分布，暂不能确定首日前十。')
         rankings[baseline] = tracked
-        sources[baseline] = reference.get('baseline_source') or '富途 CLI'
+        sources[baseline] = reference.get('baseline_source') or '富途留档'
         for day, snapshot in reference.get('snapshots', {}).items():
             if baseline <= day <= cutoff:
                 rankings[day] = top_ten(sorted(snapshot['rows'], key=lambda row: (-row['shares'], row['id'])))
@@ -106,9 +106,9 @@ def trend(database, code, as_of=None, listing_date=None):
         for row in initial:
             if 'shares' in row:
                 holdings[row['id'], baseline] = row['shares']
-        if 'ccass_cli_cache' in tables:
+        if 'ccass_cache' in tables:
             for broker, day, payload in db.execute(
-                "SELECT broker,day,payload FROM ccass_cli_cache WHERE code=? AND day BETWEEN ? AND ?",
+                "SELECT broker,day,payload FROM ccass_cache WHERE code=? AND day BETWEEN ? AND ?",
                 (code, baseline, cutoff),
             ):
                 value = json.loads(payload)
@@ -119,7 +119,7 @@ def trend(database, code, as_of=None, listing_date=None):
                 elif day not in rankings:
                     rankings[day] = top_ten([dict(id=item['broker_code'], name=item['broker_name'])
                                              for item in value['items']])
-                    sources[day] = '富途 CLI'
+                    sources[day] = value.get('source', '富途留档')
         if 'latest_state' in tables:
             row = db.execute("SELECT payload FROM latest_state WHERE code=? AND kind='daily_history'", (code,)).fetchone()
             if row:
@@ -207,9 +207,9 @@ def participant_history(database, code, broker, listing_date=None):
                                 hold_ratio=offering_ratio(reference, shares))
 
     with sqlite3.connect(database) as db:
-        if db.execute("SELECT 1 FROM sqlite_master WHERE name='ccass_cli_cache'").fetchone():
+        if db.execute("SELECT 1 FROM sqlite_master WHERE name='ccass_cache'").fetchone():
             for day, payload in db.execute(
-                "SELECT day,payload FROM ccass_cli_cache WHERE code=? AND broker=?", (code, broker)
+                "SELECT day,payload FROM ccass_cache WHERE code=? AND broker=?", (code, broker)
             ):
                 value = json.loads(payload)
                 add(day, value.get('hold_shares'))

@@ -42,3 +42,7 @@ secrets/
 *.db-*
 backups/
 *.bak
+
+# Tiger developer credentials
+tiger_openapi_config.properties
+**/tiger_openapi_config.properties

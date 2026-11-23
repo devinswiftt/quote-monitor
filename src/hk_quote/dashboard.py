@@ -1,6 +1,6 @@
 """Authenticated, loopback-only dashboard. No external assets or data upload."""
 import argparse
-from datetime import datetime
+from datetime import datetime, timedelta
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
@@ -22,7 +22,8 @@ from .participation import summarize
 from .watchlist import Watchlist, normalize_code
 from .analysis import daily_analysis
 from .ipo_trend import participant_history, refresh as refresh_ipo, trend as ipo_trend
-from .ccass_cli import fetch as fetch_ccass
+from .ccass_http import access_token, fetch as fetch_ccass
+from .futu_oauth import LocalAuthorization
 from .broker_archive import history as broker_history, initialize as initialize_broker_archive
 from .daily import daily_history,fetch_daily,day_summary,validate_history_date
 from .session import MarketSession
@@ -72,8 +73,18 @@ def main():
     stock_fetch=lambda kind:fetch_stock_data(kind,config.get('host','127.0.0.1'),config.get('port',11111))
     stock_directory=StockDirectory(database.parent/'stock-directory.json',stock_fetch)
     us_stock_directory=StockDirectory(database.parent/'us-stock-directory.json',lambda kind:stock_fetch('catalog_us' if kind=='catalog' else kind))
+    def recent_listings():
+        today = datetime.now(HK).date()
+        start = (today - timedelta(days=89)).isoformat()
+        end = today.isoformat()
+        return [row for row in stock_directory.rows()
+                if start <= row.get('listing_date', '') <= end]
+
     import_lock=threading.Lock()
+    ipo_lock = threading.Lock()
+    ipo_cache = {}
     ccass_lock=threading.Lock()
+    futu_auth = LocalAuthorization(database, args.port)
     target_quotes=TargetQuotes(database.parent/'zhitong-targets.json')
     target_quotes.start()
     session = secrets.token_urlsafe(32)
@@ -81,6 +92,23 @@ def main():
     allowed = {f'127.0.0.1:{args.port}', f'localhost:{args.port}'}
 
     refresh_lock=threading.Lock();refresh_busy=set();refresh_last={}
+
+    def warm_ccass():
+        try:
+            access_token(database)
+        except ValueError as error:
+            print(f'CCASS 启动预热等待授权：{error}', flush=True)
+            return
+        for stock in watch.rows():
+            code = stock['code']
+            if not code.startswith('HK.'):
+                continue
+            try:
+                with ccass_lock:
+                    failed = refresh_ipo(database, code, stock_directory.listing_date(code))
+                print(f'CCASS 启动预热 {code} 完成，未更新参与者 {len(failed)} 家', flush=True)
+            except (ValueError, TypeError, KeyError, sqlite3.Error, OSError):
+                print(f'CCASS 启动预热 {code} 未完成，可在网页重新更新', flush=True)
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_):
@@ -110,6 +138,13 @@ def main():
             nonlocal session
             if not self.valid_host() or self.headers.get('Origin') not in {f'http://{host}' for host in allowed}:
                 return self.reply(403, {'error': '拒绝跨站请求'})
+            if self.path == '/api/futu-authorize':
+                if not self.authorized():
+                    return self.reply(401, {'error': '请先登录'})
+                try:
+                    return self.reply(200, {'url': futu_auth.start()})
+                except ValueError as error:
+                    return self.reply(503, {'error': str(error)})
             if self.path == '/api/ccass-refresh':
                 if not self.authorized():
                     return self.reply(401, {'error': '请先登录'})
@@ -126,6 +161,7 @@ def main():
                         code = normalize_code(payload['code'])
                         if not code.startswith('HK.'):
                             raise ValueError('仅支持港股 CCASS')
+                        access_token(database)
                         failed = refresh_ipo(database, code, stock_directory.listing_date(code))
                         return self.reply(200, {'failed': failed})
                     broker = payload.get('broker')
@@ -208,6 +244,40 @@ def main():
             if not self.valid_host():
                 return self.reply(403, {})
             url = urlparse(self.path)
+            if url.path == '/auth/futu/callback':
+                if self.headers.get('Host') != urlparse(futu_auth.redirect).netloc:
+                    return self.reply(400, '请通过 localhost 完成富途授权。', 'text/plain; charset=utf-8')
+                params = parse_qs(url.query)
+                try:
+                    futu_auth.finish(params.get('state', [''])[0], params.get('code', [''])[0])
+                except (ValueError, OSError) as error:
+                    message = str(error) if isinstance(error, ValueError) else '无法保存本地富途授权。'
+                    return self.reply(400, message, 'text/plain; charset=utf-8')
+                return self.reply(200, '富途行情已授权。请返回原来的看板标签页刷新持仓。', 'text/plain; charset=utf-8')
+            if url.path == '/api/ipo-list':
+                if not self.authorized():
+                    return self.reply(401, {'error': '请先登录'})
+                with ipo_lock:
+                    now = time.monotonic()
+                    if now >= ipo_cache.get('retry_at', 0):
+                        try:
+                            rows = stock_fetch('ipo')
+                            ipo_cache.update(rows=rows, updated_at=datetime.now(HK).isoformat(),
+                                             stale=False, retry_at=now + 60)
+                        except Exception:
+                            ipo_cache.update(stale=True, retry_at=now + 10)
+                    result = dict(rows=ipo_cache.get('rows'), updated_at=ipo_cache.get('updated_at'),
+                                  stale=ipo_cache['stale'])
+                try:
+                    result['listed'] = recent_listings()
+                except ValueError:
+                    result['listed'] = None
+                return self.reply(200, result)
+            if url.path == '/ipo' and not self.authorized():
+                self.send_response(303)
+                self.send_header('Location', '/')
+                self.end_headers()
+                return
             if url.path == '/api/broker-history':
                 if not self.authorized():return self.reply(401,{'error':'请先登录'})
                 args=parse_qs(url.query);code=args.get('code',[''])[0];date=args.get('date',[None])[0]
@@ -224,7 +294,14 @@ def main():
             if url.path == '/api/daily':
                 if not self.authorized():return self.reply(401,{'error':'请先登录'})
                 args=parse_qs(url.query);code=args.get('code',[''])[0]
-                if code not in {r['code'] for r in watch.rows()}:return self.reply(400,{'error':'请选择当前自选股票'})
+                allowed_codes = {row['code'] for row in watch.rows()}
+                if code not in allowed_codes and args.get('source') == ['ipo']:
+                    try:
+                        allowed_codes.update(row['code'] for row in recent_listings())
+                    except ValueError:
+                        return self.reply(503, {'error': '港股目录暂不可用，请稍后重试。'})
+                if code not in allowed_codes:
+                    return self.reply(400, {'error': '请选择自选股票或近期已上市的港股。'})
                 key='daily:'+code
                 with refresh_lock:
                     if key in refresh_busy or time.monotonic()-refresh_last.get(key,float('-inf'))<10:return self.reply(429,{'error':'请间隔10秒再查询日K'})
@@ -372,7 +449,9 @@ def main():
                                       generated_at=datetime.now(HK).isoformat()))
                 except (sqlite3.Error, ValueError) as exc:
                     return self.reply(503, {'error': '数据库暂不可用，请稍后重试'})
-            files = {'/': ('index.html', 'text/html; charset=utf-8'),
+            files = {'/ipo': ('ipo.html', 'text/html; charset=utf-8'),
+                     '/ipo.js': ('ipo.js', 'text/javascript; charset=utf-8'),
+                     '/': ('index.html', 'text/html; charset=utf-8'),
                      '/app.js': ('app.js', 'text/javascript; charset=utf-8'),
                      '/daily-chart.js': ('daily-chart.js', 'application/javascript; charset=utf-8'),
                      '/chart-hover.js': ('chart-hover.js', 'application/javascript; charset=utf-8'),
@@ -391,6 +470,7 @@ def main():
             return self.reply(200, page_content, item[1])
 
     server = ThreadingHTTPServer(('127.0.0.1', args.port), Handler)
+    threading.Thread(target=warm_ccass, name='ccass-warmup', daemon=True).start()
     print(f'私有本机看板：http://127.0.0.1:{args.port}；'+(f'口令保存在 {keyfile}' if require_password else '当前免密码访问'), flush=True)
     try:
         server.serve_forever()

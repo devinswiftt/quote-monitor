@@ -92,8 +92,13 @@ def live(c, seconds=None, check=False):
     overflow = threading.Event()
 
     publisher = Publisher()
+    dark_codes = set()
+    dark_candidates = set()
+    next_dark_discovery = 0
 
     def put(event):
+        if event.get('code') in dark_codes:
+            event['market_session'] = 'HK_DARK'
         if event['kind'] in ('tick', 'quote', 'broker', 'book_snapshot', 'depth', 'auction_tick'):
             event['received_at'] = time.time()
             publisher.send(event)
@@ -108,7 +113,7 @@ def live(c, seconds=None, check=False):
             if ret == ft.RET_OK:
                 for row in data.to_dict('records'):
                     try:
-                        put(dict(kind='quote', code=row['code'], price=float(row['last_price']),prev_close_price=optional_number(row.get('prev_close_price')),
+                        put(dict(kind='quote', code=row['code'], dark_status=str(row.get('dark_status','NONE')), price=float(row['last_price']),prev_close_price=optional_number(row.get('prev_close_price')),
                                  ts=timestamp(str(row['data_date'])+' '+str(row['data_time']))))
                     except (KeyError, ValueError, TypeError):
                         LOG.exception('报价推送解析失败')
@@ -256,14 +261,28 @@ def live(c, seconds=None, check=False):
                 store.db.commit()
                 controls=[r for r in watch.rows(include_deleted=True) if not is_us(r['code'])]
                 c['names'].update({r['code']:r['name'] for r in controls if r['name']})
-                desired={r['code']:r for r in controls if r['enabled']}
+                session_open, session_message = market_session.status()
+                local_now = datetime.now(HK)
+                dark_hours = 975 <= local_now.hour*60+local_now.minute < 1110
+                if not session_open and dark_hours and time.monotonic() >= next_dark_discovery:
+                    next_dark_discovery = time.monotonic()+60
+                    try:
+                        from .stock_search import fetch as fetch_directory
+                        ipos = fetch_directory('ipo', c['host'], c['port'])
+                        today = local_now.date().isoformat()
+                        dark_candidates = {r['code'] for r in ipos if str(r.get('list_time','')) > today and str(r.get('list_time','')) != 'N/A'}
+                    except Exception:
+                        LOG.warning('暗盘新股名单查询失败，稍后重试')
+                if not dark_hours:
+                    dark_candidates.clear()
+                desired={r['code']:r for r in controls if r['enabled'] and (session_open or r['code'] in dark_candidates)}
                 for row in controls:
                     code=row['code']
-                    if not row['enabled']:
+                    if not row['enabled'] or code not in desired:
                         behaviors.stop(code,'单股停止监控',time.time(),participation)
                         # Gate first: queued callbacks must not trigger after a stop request.
                         if code in active:releases[code]=0
-                        active.pop(code,None)
+                        active.pop(code,None);dark_codes.discard(code)
                         engine.drop(code);broker_cache.items.pop(code,None)
                         for _, ident, saved in pending_participation:
                             if saved['code']==code:
@@ -289,10 +308,10 @@ def live(c, seconds=None, check=False):
                                 releases[code]=time.monotonic()+30
                                 release_error='监控已停止；行情订阅释放等待重试'
                         if row['state']!='stopped' or release_error:
-                            watch.acknowledge(row,'stopped',release_error)
+                            watch.acknowledge(row,'waiting_session' if row['enabled'] else 'stopped',release_error)
                 c['symbols']=list(active)
                 session_open, session_message = market_session.status()
-                if desired and not session_open:
+                if desired and not session_open and not dark_hours:
                     behaviors.stop_all('交易时段结束或午休',time.time(),participation)
                     # Finish existing evidence before clearing session caches. No new signals.
                     for _, ident, saved in pending_participation:
@@ -312,7 +331,7 @@ def live(c, seconds=None, check=False):
                     stop.wait(.5);continue
                 if not desired:
                     if ctx is not None:ctx.close();ctx=None
-                    health.set('idle','所有股票监控已停止')
+                    health.set('paused' if any(r['enabled'] for r in controls) else 'idle',session_message if any(r['enabled'] for r in controls) else '所有股票监控已停止')
                     stop.wait(.5);continue
                 if ctx is None:
                     for row in desired.values():
@@ -345,7 +364,7 @@ def live(c, seconds=None, check=False):
                         if ret != ft.RET_OK:
                             raise RuntimeError('无法确认港股交易日历：'+str(calendar))
                         market_session.update(date, calendar)
-                    if not market_session.status()[0]:
+                    if not market_session.status()[0] and not (dark_hours and desired):
                         ctx.close();ctx=None
                         continue
                     ctx.set_handler(Quotes())
@@ -382,6 +401,16 @@ def live(c, seconds=None, check=False):
                         ret,detail=ctx.subscribe([code],[ft.SubType.TICKER,ft.SubType.ORDER_BOOK,ft.SubType.QUOTE],is_first_push=False)
                         if ret!=ft.RET_OK:raise RuntimeError(str(detail))
                         releases.pop(code,None)
+                        if not session_open:
+                            ret, dark_quote = ctx.get_stock_quote([code])
+                            if ret != ft.RET_OK or dark_quote.empty or dark_quote.iloc[0].get('dark_status') != 'TRADING':
+                                ctx.unsubscribe([code],[ft.SubType.TICKER,ft.SubType.ORDER_BOOK,ft.SubType.QUOTE])
+                                watch.acknowledge(row,'waiting_session','等待富途确认暗盘开市')
+                                stock_retries[(code,row['revision'])]=time.monotonic()+15
+                                continue
+                            dark_codes.add(code)
+                        else:
+                            dark_codes.discard(code)
                         name=row['name']
                         try:
                             ret,frame=ctx.get_market_snapshot([code])
@@ -442,7 +471,7 @@ def live(c, seconds=None, check=False):
                 event['received_at'] = received
                 store.event(processed, event)
                 participation.observe(received, event)
-                if event['kind'] in ('tick','book') and -2<=processed-event['ts']<=3:
+                if event.get('market_session') != 'HK_DARK' and event['kind'] in ('tick','book') and -2<=processed-event['ts']<=3:
                     behaviors.process(event,participation)
                 if event['kind'] == 'depth' and market_session.phase()=='CONTINUOUS':
                     message = depth_monitor.observe(event['code'], event['bids'], event['asks'])
@@ -465,6 +494,9 @@ def live(c, seconds=None, check=False):
                     LOG.debug('忽略过期或未来事件: %s lag=%.1f', event['code'], lag)
                 else:
                     alert = engine.process(event)
+                    if alert and event.get('market_session') == 'HK_DARK':
+                        alert['market_session']='HK_DARK'
+                        alert['signal_label']='暗盘 · '+alert['signal_label']
                     if alert and (not watch or time.time()>=active[event['code']]['warmup_until']):
                         alert['name'] = c.get('names', {}).get(alert['code'])
                         alert = broker_cache.attach(alert)
@@ -500,6 +532,7 @@ def live(c, seconds=None, check=False):
                             for snapshot_row in json.loads(snapshot_frame.to_json(orient='records',force_ascii=False)):put(snapshot_event(snapshot_row))
                     except Exception:LOG.exception('市值快照查询失败，保留旧数据')
                 for code in c['symbols']:
+                    if code in dark_codes:continue
                     try:
                         ret, detail = ctx.subscribe([code], [ft.SubType.K_1M], subscribe_push=False)
                         if ret != ft.RET_OK:
@@ -519,6 +552,7 @@ def live(c, seconds=None, check=False):
             if now >= next_broker_flow:
                 next_broker_flow = now + c.get('broker_stats_seconds',10)
                 for code in c['symbols']:
+                    if code in dark_codes:continue
                     try:
                         ret, frame = ctx.get_top_ten_buy_sell_brokers(code, days_before=0)
                         if ret == ft.RET_OK:
@@ -544,10 +578,12 @@ def live(c, seconds=None, check=False):
                 if now >= next_broker_retry:
                     next_broker_retry = now + 60
                     for code in c['symbols']:
+                        if code in dark_codes:continue
                         broker_ret, broker_detail = ctx.subscribe([code], [ft.SubType.BROKER], is_first_push=True)
                         if broker_ret != ft.RET_OK:
                             LOG.warning('经纪队列订阅不可用 %s: %s', code, broker_detail)
                 for code in c['symbols']:
+                    if code in dark_codes:continue
                     try:
                         ret, bids, asks = ctx.get_broker_queue(code)
                         if ret == ft.RET_OK:
@@ -561,6 +597,16 @@ def live(c, seconds=None, check=False):
                     ret, quotes = ctx.get_stock_quote(c['symbols'])
                     if ret == ft.RET_OK:
                         for row in quotes.to_dict('records'):
+                            if row['code'] in dark_codes and row.get('dark_status') != 'TRADING':
+                                code = row['code']
+                                dark_codes.discard(code)
+                                active.pop(code,None)
+                                ctx.unsubscribe([code],[ft.SubType.TICKER,ft.SubType.ORDER_BOOK,ft.SubType.QUOTE])
+                                engine.drop(code)
+                                continue
+                            if row['code'] in dark_codes:
+                                put(dict(kind='quote',code=row['code'],ts=timestamp(str(row['data_date'])+' '+str(row['data_time'])),
+                                         price=float(row['last_price']),prev_close_price=float(row['prev_close_price']),dark_status='TRADING'))
                             observed = time.time()
                             if str(row['data_date']) != datetime.fromtimestamp(observed, HK).strftime('%Y-%m-%d'):
                                 continue

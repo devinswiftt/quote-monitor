@@ -31,11 +31,12 @@ def fetch(kind,host='127.0.0.1',port=11111):
                 records.extend(json.loads(frame.to_json(orient='records',force_ascii=False)))
             return clean(records,market='US')
         if kind=='catalog':ret,frame=ctx.get_stock_basicinfo(ft.Market.HK,ft.SecurityType.STOCK)
+        elif kind=='ipo':ret,frame=ctx.get_ipo_list(ft.Market.HK)
         elif kind=='groups':ret,frame=ctx.get_user_security_group()
         else:ret,frame=ctx.get_user_security(kind.split(':',1)[1] if ':' in kind else '港股')
         if ret!=ft.RET_OK:raise ValueError('富途读取失败，请检查 OpenD 连接和登录状态')
         records=json.loads(frame.to_json(orient='records',force_ascii=False))
-        return records if kind=='groups' else clean(records,market='US' if kind=='catalog_us' else 'HK')
+        return records if kind in ('groups','ipo') else clean(records,market='US' if kind=='catalog_us' else 'HK')
     finally:ctx.close()
 
 

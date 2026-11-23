@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 import math
 
 HK = ZoneInfo('Asia/Hong_Kong')
-from .markets import NY,us_period
+from .markets import us_period
 
 
 def trading_clock(ts,market="HK"):

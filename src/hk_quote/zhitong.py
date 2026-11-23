@@ -1,5 +1,4 @@
 """Poll the same public forecasts used by Zhitong's Stock Connect page."""
-from datetime import datetime
 import json
 import math
 from pathlib import Path
@@ -7,7 +6,6 @@ import threading
 import time
 from urllib.parse import urlencode
 from urllib.request import Request,urlopen
-from .engine import HK
 
 BASE='https://betaapi.zhitongcaijing.com/hkmarket/v3/ggt-ctb/'
 
